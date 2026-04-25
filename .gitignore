@@ -1,0 +1,20 @@
+# Frontend
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+
+# Backend
+backend/node_modules/
+backend/.env
+
+# ML Engine
+ml-engine/__pycache__/
+ml-engine/*.pyc
+ml-engine/venv/
+ml-engine/.env
+
+# General
+.DS_Store
+*.log
+*.pem
+.vscode/
