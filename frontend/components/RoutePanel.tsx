@@ -194,23 +194,47 @@ export default function RoutePanel({ origin, dest, setOrigin, setDest, pickingMo
 
           {/* Active route info */}
           {activeRoute && (
-            <div style={{ marginTop:14, padding:12, borderRadius:10, background:"rgba(99,102,241,0.07)", border:"1px solid rgba(99,102,241,0.2)" }}>
-              <div style={{ fontSize:11, fontWeight:700, color:"#818cf8", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.06em" }}>
-                Selected Route Stats
+            <div style={{ marginTop:14, display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ padding:12, borderRadius:10, background:"rgba(99,102,241,0.07)", border:"1px solid rgba(99,102,241,0.2)" }}>
+                <div style={{ fontSize:11, fontWeight:700, color:"#818cf8", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+                  Selected Route Stats
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                  {[
+                    { label:"Steps",        value: activeRoute.instructions?.length || 0 },
+                    { label:"Segments",     value: activeRoute.segments?.length || "—" },
+                    { label:"Distance",     value: `${activeRoute.totalDistanceKm} km` },
+                    { label:"ETA",          value: `${activeRoute.estimatedMinutes} min` },
+                  ].map(({ label, value }) => (
+                    <div key={label} style={{ textAlign:"center", padding:"8px", background:"rgba(255,255,255,0.03)", borderRadius:8 }}>
+                      <div style={{ fontSize:14, fontWeight:800, color:"#f1f5f9" }}>{value}</div>
+                      <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
-                {[
-                  { label:"Waypoints",    value: activeRoute.waypoints.length },
-                  { label:"Segments",     value: activeRoute.segments?.length || "—" },
-                  { label:"Distance",     value: `${activeRoute.totalDistanceKm} km` },
-                  { label:"ETA",          value: `${activeRoute.estimatedMinutes} min` },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ textAlign:"center", padding:"8px", background:"rgba(255,255,255,0.03)", borderRadius:8 }}>
-                    <div style={{ fontSize:14, fontWeight:800, color:"#f1f5f9" }}>{value}</div>
-                    <div style={{ fontSize:10, color:"#475569", marginTop:2 }}>{label}</div>
+
+              {/* Step-by-Step Directions */}
+              {activeRoute.instructions && activeRoute.instructions.length > 0 && (
+                <div style={{ padding:12, borderRadius:16, background:"rgba(13,22,40,0.5)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:"#94a3b8", marginBottom:12, textTransform:"uppercase", letterSpacing:"0.06em", display:"flex", alignItems:"center", gap:6 }}>
+                    <Navigation size={12} /> Turn-by-Turn Directions
                   </div>
-                ))}
-              </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8, maxHeight:"200px", overflowY:"auto", paddingRight:6 }} className="scrollbar-none">
+                    {activeRoute.instructions.map((step, i) => (
+                      <div key={i} style={{ display:"flex", gap:10, paddingBottom:8, borderBottom: i === activeRoute.instructions.length-1 ? "none" : "1px solid rgba(255,255,255,0.03)" }}>
+                        <div style={{ width:18, height:18, borderRadius:5, background:"rgba(99,102,241,0.15)", color:"#818cf8", fontSize:9, fontWeight:800, display:"flex", alignItems:"center", justifyCenter:"center", flexShrink:0, marginTop:2 }}>
+                          {i + 1}
+                        </div>
+                        <div style={{ flex:1 }}>
+                          <div style={{ fontSize:11, color:"#f1f5f9", lineHeight:1.4 }}>{step.text}</div>
+                          <div style={{ fontSize:9, color:"#475569", marginTop:2 }}>{step.name} · {step.distanceM}m</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
