@@ -2,40 +2,30 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Toaster } from "react-hot-toast";
 
+import type { Metadata, Viewport } from "next";
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  themeColor: "#060b18",
+  viewportFit: "cover",
+};
+
 export const metadata: Metadata = {
   title: "SafeRoutes — AI-Powered Safety Navigation",
-  description:
-    "Navigate smarter with real-time AI safety scores, live incident alerts, and ML-based risk prediction. The future of safe urban navigation.",
-  keywords: ["safe route", "safety navigation", "crime map", "AI navigation", "women safety"],
-  openGraph: {
-    title: "SafeRoutes — AI-Powered Safety Navigation",
-    description: "Navigate smarter with real-time AI safety scores",
-    type: "website",
+  description: "Navigate smarter with real-time AI safety scores, live incident alerts, and ML-based risk prediction.",
+  manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "black-translucent",
   },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" suppressHydrationWarning>
-      <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0, viewport-fit=cover" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-        <meta name="theme-color" content="#060b18" />
-        <link rel="manifest" href="/manifest.json" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link
-          href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700&display=swap"
-          rel="stylesheet"
-        />
-        <link
-          rel="stylesheet"
-          href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-          integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
-          crossOrigin=""
-        />
-      </head>
+    <html lang="en">
       <body>
         {children}
         <Toaster
