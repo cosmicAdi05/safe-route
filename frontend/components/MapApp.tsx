@@ -48,7 +48,7 @@ const HAVEN_COLORS: Record<string, string> = {
   police: "#6366f1", hospital: "#ef4444", metro: "#22c55e", shelter: "#f59e0b"
 };
 
-const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090];
+const DEFAULT_CENTER: [number, number] = [20.5937, 78.9629];
 
 function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng.lat, e.latlng.lng) });
@@ -88,7 +88,34 @@ export default function MapApp() {
   const [heatPoints, setHeatPoints] = useState<HeatPoint[]>([]);
   const [zones, setZones] = useState<SafetyZone[]>([]);
   const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
+  const [liveLocation, setLiveLocation] = useState<{lat:number;lng:number}|null>(null);
+  const [trackingLive, setTrackingLive] = useState(false);
   const [showHavens, setShowHavens] = useState(true);
+  const watchIdRef = useRef<number|null>(null);
+
+  // ── Live Location Tracking ─────────────────────────────────────────────
+  const startLiveTracking = useCallback(() => {
+    if (!navigator.geolocation) return toast.error("Geolocation not supported");
+    toast.success("Live location tracking started");
+    setTrackingLive(true);
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+        setLiveLocation(loc);
+        setOrigin({ ...loc, label: "My Location (Live)" });
+      },
+      () => toast.error("Location access denied"),
+      { enableHighAccuracy: true, maximumAge: 5000 }
+    );
+  }, []);
+
+  const stopLiveTracking = useCallback(() => {
+    if (watchIdRef.current !== null) navigator.geolocation.clearWatch(watchIdRef.current);
+    setTrackingLive(false);
+    setLiveLocation(null);
+    toast("Live tracking stopped");
+  }, []);
+
 
   // Offline ML
   const [offlineScore, setOfflineScore] = useState<RiskPrediction | null>(null);
@@ -217,7 +244,7 @@ export default function MapApp() {
 
       {/* ── Map Canvas ── */}
       <div className="absolute inset-0 z-0">
-        <MapContainer center={DEFAULT_CENTER} zoom={14} zoomControl={false} style={{ width: "100%", height: "100%" }}>
+        <MapContainer center={DEFAULT_CENTER} zoom={5} zoomControl={false} style={{ width: "100%", height: "100%" }}>
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; CARTO'
@@ -297,7 +324,29 @@ export default function MapApp() {
             />
           )}
 
-          {/* Origin / Dest Pins */}
+          {/* Live Location Marker */}
+          {liveLocation && (
+            <Marker
+              position={[liveLocation.lat, liveLocation.lng]}
+              icon={L.divIcon({
+                html: `<div style="
+                  width:20px;height:20px;border-radius:50%;
+                  background:rgba(59,130,246,0.9);
+                  border:3px solid #fff;
+                  box-shadow:0 0 0 6px rgba(59,130,246,0.3), 0 0 20px rgba(59,130,246,0.5);
+                  animation:pulse 2s infinite
+                "></div>`,
+                className: "", iconAnchor: [10, 10]
+              })}
+            >
+              <Popup>
+                <div style={{ color: "#f1f5f9" }}>
+                  <b>You are here</b>
+                  <div style={{ fontSize: 10, color: "#94a3b8", marginTop: 4 }}>Live GPS · Updates every 5s</div>
+                </div>
+              </Popup>
+            </Marker>
+          )}
           {origin && <Marker position={[origin.lat, origin.lng]} icon={makeIcon("#6366f1", 16)}>
             <Popup><div style={{ color: "#f1f5f9" }}><b>Start</b><br/><span style={{fontSize:11, color:"#94a3b8"}}>{origin.label}</span></div></Popup>
           </Marker>}
@@ -310,15 +359,23 @@ export default function MapApp() {
       {/* ── Floating Search ── */}
       <FloatingSearch
         origin={origin} dest={dest}
-        onSetOrigin={() => { setPickingMode("origin"); toast("Tap the map to set your start point"); }}
-        onSetDest={() => { setPickingMode("dest"); toast("Tap the map to set your destination"); }}
+        onSetOrigin={(loc) => loc.lat ? setOrigin(loc) : setOrigin(null)}
+        onSetDest={(loc) => loc.lat ? setDest(loc) : setDest(null)}
         onCompute={computeRoutes}
         onOpenCyber={() => setShowCyber(true)}
         onOpenAnalytics={() => setShowAnalytics(true)}
+        onUseMyLocation={startLiveTracking}
         user={user}
       />
 
-      {/* ── Map Layer Controls (top right) ── */}
+      {/* ── Live Tracking Control ── */}
+      {trackingLive && (
+        <div className="fixed top-40 left-1/2 -translate-x-1/2 z-[800] glass px-5 py-2.5 rounded-2xl flex items-center gap-3 border border-blue-500/30 animate-fade-in">
+          <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+          <span className="text-xs font-bold text-blue-300">Live Tracking Active</span>
+          <button onClick={stopLiveTracking} className="text-[10px] text-slate-400 hover:text-white ml-2">Stop</button>
+        </div>
+      )}
       <div className="fixed top-6 right-5 z-[800] flex flex-col gap-2">
         <button
           onClick={() => setShowSafeHavens(true)}

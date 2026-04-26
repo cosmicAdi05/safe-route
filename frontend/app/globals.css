@@ -1,7 +1,7 @@
-@import "tailwindcss";
-
-/* ── Google Fonts ── */
+/* ── Google Fonts must be first ── */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Grotesk:wght@400;500;600;700;800&display=swap');
+
+@import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -102,7 +102,6 @@ html, body {
   height: 36px !important;
   line-height: 36px !important;
   font-size: 16px !important;
-  transition: all 0.2s !important;
 }
 .leaflet-control-zoom a:hover {
   background: rgba(99,102,241,0.3) !important;
@@ -111,8 +110,8 @@ html, body {
 
 /* ── Animations ── */
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4), 0 0 20px rgba(239,68,68,0.2); transform: scale(1); }
-  50% { box-shadow: 0 0 0 12px rgba(239,68,68,0), 0 0 30px rgba(239,68,68,0.4); transform: scale(1.05); }
+  0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); transform: scale(1); }
+  50% { box-shadow: 0 0 0 12px rgba(239,68,68,0); transform: scale(1.05); }
 }
 .animate-pulse-glow { animation: pulse-glow 2.5s ease-in-out infinite; }
 
@@ -129,8 +128,8 @@ html, body {
 .animate-fade-in { animation: fade-in 0.3s ease both; }
 
 @keyframes float-badge {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
+  0%, 100% { transform: translateX(-50%) translateY(0); }
+  50% { transform: translateX(-50%) translateY(-5px); }
 }
 .animate-float { animation: float-badge 3s ease-in-out infinite; }
 
@@ -139,14 +138,10 @@ html, body {
   100% { background-position: 200% 0; }
 }
 .shimmer {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 50%, rgba(255,255,255,0.03) 75%);
   background-size: 200% 100%;
   animation: shimmer 2s infinite;
-}
-
-@keyframes draw-route {
-  from { stroke-dashoffset: 2000; }
-  to { stroke-dashoffset: 0; }
+  border-radius: 16px;
 }
 
 /* ── Risk Score Ring ── */
