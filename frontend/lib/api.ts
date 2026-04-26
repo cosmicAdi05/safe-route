@@ -1,6 +1,6 @@
 // lib/api.ts — centralised API client (v3.0 — fully connected)
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
-const ML  = process.env.NEXT_PUBLIC_ML_URL  || "http://localhost:8000";
+const API = process.env.NEXT_PUBLIC_API_URL || "https://saferoutes-backend.onrender.com";
+const ML  = process.env.NEXT_PUBLIC_ML_URL  || "https://saferoutes-ml.onrender.com";
 
 // ── Auth token helpers ─────────────────────────────────────────────────────
 export function getToken(): string | null {
