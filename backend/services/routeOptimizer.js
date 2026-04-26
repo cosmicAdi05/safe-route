@@ -38,7 +38,7 @@ async function fetchOSRMRoutes(lat1, lng1, lat2, lng2) {
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${lng1},${lat1};${lng2},${lat2}` +
-    `?overview=full&geometries=geojson&alternatives=true&steps=false`;
+    `?overview=full&geometries=geojson&alternatives=true&steps=true`;
 
   const res = await axios.get(url, { timeout: 12000 });
   if (!res.data?.routes?.length) throw new Error('OSRM returned no routes');
@@ -57,7 +57,7 @@ async function fetchOSRMViaRoute(lat1, lng1, lat2, lng2) {
   const url =
     `https://router.project-osrm.org/route/v1/driving/` +
     `${lng1},${lat1};${perpLng},${perpLat};${lng2},${lat2}` +
-    `?overview=full&geometries=geojson&steps=false`;
+    `?overview=full&geometries=geojson&steps=true`;
 
   const res = await axios.get(url, { timeout: 12000 });
   return res.data?.routes?.[0] || null;
@@ -108,7 +108,7 @@ async function scoreRouteWaypoints(waypoints) {
 }
 
 // ── Compute route metrics from scored waypoints ───────────────────────────────
-function computeMetrics(waypoints, osrmDistM, osrmDurS) {
+function computeMetrics(waypoints, osrmDistM, osrmDurS, route) {
   const dist = osrmDistM
     ? osrmDistM / 1000
     : waypoints.reduce((sum, p, i) => {
@@ -132,9 +132,19 @@ function computeMetrics(waypoints, osrmDistM, osrmDurS) {
     safetyScore: p.safetyScore ?? 65,
   }));
 
+  const instructions = route?.legs?.flatMap(leg => 
+    leg.steps.map(step => ({
+      text: step.maneuver.instruction,
+      distanceM: Math.round(step.distance),
+      durationS: Math.round(step.duration),
+      name: step.name || "Street"
+    }))
+  ) || [];
+
   return {
     waypoints,
     segments,
+    instructions,
     totalDistanceKm:    parseFloat(dist.toFixed(2)),
     estimatedMinutes:   estMinutes,
     overallSafetyScore: avgSafety,
@@ -200,9 +210,9 @@ async function computeRoutes(originLat, originLng, destLat, destLng) {
   ]);
 
   return {
-    fastest:  { ...computeMetrics(fastestWpts,  fastestRaw.distance,  fastestRaw.duration),  routeType: 'fastest' },
-    safest:   { ...computeMetrics(safestWpts,   safestRaw.distance,   safestRaw.duration),   routeType: 'safest' },
-    balanced: { ...computeMetrics(balancedWpts, balancedRaw.distance, balancedRaw.duration), routeType: 'balanced' },
+    fastest:  { ...computeMetrics(fastestWpts,  fastestRaw.distance,  fastestRaw.duration,  fastestRaw),  routeType: 'fastest' },
+    safest:   { ...computeMetrics(safestWpts,   safestRaw.distance,   safestRaw.duration,   safestRaw),   routeType: 'safest' },
+    balanced: { ...computeMetrics(balancedWpts, balancedRaw.distance, balancedRaw.duration, balancedRaw), routeType: 'balanced' },
     meta: {
       usingFallback:  false,
       waypointCount:  fastestWpts.length,
