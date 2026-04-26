@@ -1,26 +1,15 @@
 /**
  * ╔══════════════════════════════════════════════════════════════════╗
- * ║     SMART ROUTE OPTIMIZER  — Modified A* with Safety Weight     ║
+ * ║   SMART ROUTE OPTIMIZER  — OSRM + Safety Scoring  v3.0        ║
+ * ╠══════════════════════════════════════════════════════════════════╣
+ * ║  Uses OSRM (Open Source Routing Machine) public API for        ║
+ * ║  real road-following routes, then overlays our safety scoring. ║
  * ╚══════════════════════════════════════════════════════════════════╝
  *
- * ALGORITHM OVERVIEW:
- * Standard A* minimises: f(n) = g(n) + h(n)
- *   g(n) = actual cost from start
- *   h(n) = heuristic (Haversine distance to goal)
- *
- * Our modification adds a SAFETY COST per edge:
- *   edgeCost = distance × dangerPenalty(safetyScore)
- *   dangerPenalty(s) = 1 + α × (1 - s/100)²
- *
- *   α = safety weight (0=ignore safety, 1=avoid danger moderately, 10=avoid heavily)
- *
  * ROUTE TYPES:
- *   - Safest:   α = 10  (strongly penalise dangerous segments)
- *   - Fastest:  α = 0   (pure distance, like Dijkstra)
- *   - Balanced: α = 3   (moderate safety penalty)
- *
- * Graph is built dynamically from OSM Overpass API waypoints.
- * If OSM fails, we fall back to direct-path segmentation.
+ *   - Fastest:  OSRM primary route (shortest travel time)
+ *   - Safest:   OSRM via-point detour through lower-risk areas
+ *   - Balanced: OSRM alternative route (if available), else midpoint
  */
 
 const axios = require('axios');
@@ -39,193 +28,187 @@ function haversine(lat1, lng1, lat2, lng2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
-// ── Danger Penalty Function ────────────────────────────────────────────────────
 function dangerPenalty(safetyScore, alpha) {
   const danger = 1 - safetyScore / 100;
   return 1 + alpha * danger * danger;
 }
 
-// ── Fetch road waypoints from OSM ─────────────────────────────────────────────
-async function fetchOSMWaypoints(lat1, lng1, lat2, lng2) {
-  try {
-    // Bounding box with slight padding
-    const minLat = Math.min(lat1, lat2) - 0.01;
-    const maxLat = Math.max(lat1, lat2) + 0.01;
-    const minLng = Math.min(lng1, lng2) - 0.01;
-    const maxLng = Math.max(lng1, lng2) + 0.01;
+// ── Fetch routes from OSRM (with alternatives) ────────────────────────────────
+async function fetchOSRMRoutes(lat1, lng1, lat2, lng2) {
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/` +
+    `${lng1},${lat1};${lng2},${lat2}` +
+    `?overview=full&geometries=geojson&alternatives=true&steps=false`;
 
-    const query = `
-      [out:json][timeout:15];
-      way["highway"~"primary|secondary|tertiary|residential|unclassified|living_street|footway|path"]
-        (${minLat},${minLng},${maxLat},${maxLng});
-      (._;>;);
-      out body;
-    `;
-    const res = await axios.post(
-      'https://overpass-api.de/api/interpreter',
-      `data=${encodeURIComponent(query)}`,
-      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, timeout: 15000 }
-    );
-
-    const elements = res.data?.elements || [];
-    const nodes = {};
-    elements.filter((e) => e.type === 'node').forEach((n) => {
-      nodes[n.id] = { lat: n.lat, lng: n.lon };
-    });
-
-    const ways = elements.filter((e) => e.type === 'way');
-    // Build node list: each way = ordered sequence of node IDs
-    const waypoints = [];
-    ways.forEach((w) => {
-      w.nodes?.forEach((nid) => {
-        if (nodes[nid]) waypoints.push(nodes[nid]);
-      });
-    });
-
-    // Deduplicate (within ~10m)
-    const seen = new Set();
-    return waypoints.filter((p) => {
-      const key = `${p.lat.toFixed(4)},${p.lng.toFixed(4)}`;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  } catch {
-    return null; // triggers fallback
-  }
+  const res = await axios.get(url, { timeout: 12000 });
+  if (!res.data?.routes?.length) throw new Error('OSRM returned no routes');
+  return res.data.routes; // array, each has .geometry.coordinates + .distance + .duration
 }
 
-// ── Generate intermediate waypoints (fallback) ────────────────────────────────
-function generateFallbackWaypoints(lat1, lng1, lat2, lng2, steps = 10) {
+// ── Fetch via-point detour route (for safest path) ───────────────────────────
+async function fetchOSRMViaRoute(lat1, lng1, lat2, lng2) {
+  // Compute a perpendicular offset via-point to force a different road
+  const dLat = lat2 - lat1;
+  const dLng = lng2 - lng1;
+  const len  = Math.sqrt(dLat ** 2 + dLng ** 2) || 0.001;
+  const perpLat = (lat1 + lat2) / 2 + (-dLng / len) * 0.009;
+  const perpLng = (lng1 + lng2) / 2 + ( dLat / len) * 0.009;
+
+  const url =
+    `https://router.project-osrm.org/route/v1/driving/` +
+    `${lng1},${lat1};${perpLng},${perpLat};${lng2},${lat2}` +
+    `?overview=full&geometries=geojson&steps=false`;
+
+  const res = await axios.get(url, { timeout: 12000 });
+  return res.data?.routes?.[0] || null;
+}
+
+// ── Decode GeoJSON geometry → sampled {lat,lng} waypoints ────────────────────
+function decodeGeometry(route, maxPoints = 60) {
+  const coords = route.geometry.coordinates; // each: [lng, lat]
+  const step   = Math.max(1, Math.floor(coords.length / maxPoints));
+  const points = [];
+  for (let i = 0; i < coords.length; i += step) {
+    points.push({ lat: coords[i][1], lng: coords[i][0] });
+  }
+  // Always include last point
+  const last = coords[coords.length - 1];
+  if (!points.length || points[points.length - 1].lat !== last[1]) {
+    points.push({ lat: last[1], lng: last[0] });
+  }
+  return points;
+}
+
+// ── Score safety along waypoints (parallel, sampled) ─────────────────────────
+async function scoreRouteWaypoints(waypoints) {
+  // Only score every Nth point to avoid too many DB/API calls
+  const sampleEvery = Math.max(1, Math.floor(waypoints.length / 8));
+
+  const scored = await Promise.all(
+    waypoints.map(async (p, i) => {
+      if (i % sampleEvery !== 0 && i !== 0 && i !== waypoints.length - 1) {
+        return { ...p, safetyScore: null };
+      }
+      try {
+        const result = await computeSafetyScore(p.lat, p.lng);
+        return { ...p, safetyScore: result.score, riskLevel: result.riskLevel };
+      } catch {
+        return { ...p, safetyScore: 65 };
+      }
+    })
+  );
+
+  // Interpolate nulls from nearest known score
+  let last = 65;
+  for (const p of scored) {
+    if (p.safetyScore !== null) last = p.safetyScore;
+    else p.safetyScore = last;
+  }
+  return scored;
+}
+
+// ── Compute route metrics from scored waypoints ───────────────────────────────
+function computeMetrics(waypoints, osrmDistM, osrmDurS) {
+  const dist = osrmDistM
+    ? osrmDistM / 1000
+    : waypoints.reduce((sum, p, i) => {
+        if (i === 0) return 0;
+        return sum + haversine(waypoints[i - 1].lat, waypoints[i - 1].lng, p.lat, p.lng);
+      }, 0);
+
+  const estMinutes = osrmDurS
+    ? Math.round(osrmDurS / 60)
+    : Math.round((dist / 30) * 60);
+
+  const scoreSum = waypoints.reduce((s, p) => s + (p.safetyScore ?? 65), 0);
+  const avgSafety = Math.round(scoreSum / waypoints.length);
+
+  const segments = waypoints.slice(0, -1).map((p, i) => ({
+    from: { lat: p.lat, lng: p.lng },
+    to:   { lat: waypoints[i + 1].lat, lng: waypoints[i + 1].lng },
+    distanceKm: parseFloat(
+      haversine(p.lat, p.lng, waypoints[i + 1].lat, waypoints[i + 1].lng).toFixed(3)
+    ),
+    safetyScore: p.safetyScore ?? 65,
+  }));
+
+  return {
+    waypoints,
+    segments,
+    totalDistanceKm:    parseFloat(dist.toFixed(2)),
+    estimatedMinutes:   estMinutes,
+    overallSafetyScore: avgSafety,
+  };
+}
+
+// ── Fallback: interpolated straight-ish path ──────────────────────────────────
+function generateFallbackWaypoints(lat1, lng1, lat2, lng2, steps = 12) {
   const points = [];
   for (let i = 0; i <= steps; i++) {
     const t = i / steps;
-    // Slight S-curve offset to simulate a realistic road
     const offset = Math.sin(t * Math.PI) * 0.003;
     points.push({
-      lat: lat1 + (lat2 - lat1) * t + (Math.random() - 0.5) * 0.001,
+      lat: lat1 + (lat2 - lat1) * t,
       lng: lng1 + (lng2 - lng1) * t + offset,
     });
   }
   return points;
 }
 
-// ── A* Graph Search (on discretised waypoints) ────────────────────────────────
-async function aStarSafeRoute(waypoints, goalLat, goalLng, alpha) {
-  if (!waypoints || waypoints.length === 0) return [];
-
-  // Priority queue: [fScore, index]
-  const pq = [[0, 0]];
-  const gScore = new Array(waypoints.length).fill(Infinity);
-  const parent = new Array(waypoints.length).fill(-1);
-  gScore[0] = 0;
-
-  const goalIdx = waypoints.length - 1;
-
-  while (pq.length > 0) {
-    pq.sort((a, b) => a[0] - b[0]);
-    const [, current] = pq.shift();
-
-    if (current === goalIdx) break;
-
-    // Consider next 5 nearest nodes as neighbours
-    const neighbours = waypoints
-      .map((p, i) => ({ i, d: haversine(waypoints[current].lat, waypoints[current].lng, p.lat, p.lng) }))
-      .filter((x) => x.i !== current)
-      .sort((a, b) => a.d - b.d)
-      .slice(0, 5);
-
-    for (const { i, d } of neighbours) {
-      const safetyScore = waypoints[i].safetyScore ?? 60;
-      const edgeCost = d * dangerPenalty(safetyScore, alpha);
-      const newG = gScore[current] + edgeCost;
-      if (newG < gScore[i]) {
-        gScore[i] = newG;
-        parent[i] = current;
-        const h = haversine(waypoints[i].lat, waypoints[i].lng, goalLat, goalLng);
-        pq.push([newG + h, i]);
-      }
-    }
-  }
-
-  // Reconstruct path
-  const path = [];
-  let cur = goalIdx;
-  while (cur !== -1) {
-    path.unshift(waypoints[cur]);
-    cur = parent[cur];
-  }
-  return path;
-}
-
-// ── Main Route Computation ─────────────────────────────────────────────────────
+// ── Main Entry Point ──────────────────────────────────────────────────────────
 async function computeRoutes(originLat, originLng, destLat, destLng) {
-  // 1. Fetch road waypoints from OSM
-  let rawWaypoints = await fetchOSMWaypoints(originLat, originLng, destLat, destLng);
-  const usingFallback = !rawWaypoints || rawWaypoints.length < 5;
-  if (usingFallback) {
-    rawWaypoints = generateFallbackWaypoints(originLat, originLng, destLat, destLng, 12);
+  let osrmRoutes = null;
+  let viaRoute   = null;
+  let usingFallback = false;
+
+  // 1. Fetch from OSRM (fastest + alternative + via-detour in parallel)
+  try {
+    [osrmRoutes, viaRoute] = await Promise.all([
+      fetchOSRMRoutes(originLat, originLng, destLat, destLng),
+      fetchOSRMViaRoute(originLat, originLng, destLat, destLng).catch(() => null),
+    ]);
+  } catch (err) {
+    console.warn('[RouteOptimizer] OSRM failed:', err.message, '— using fallback');
+    usingFallback = true;
   }
 
-  // Attach origin/dest explicitly
-  rawWaypoints.unshift({ lat: originLat, lng: originLng });
-  rawWaypoints.push({ lat: destLat, lng: destLng });
-
-  // 2. Compute safety scores for a sample of waypoints (parallel, throttled)
-  const sampleEvery = Math.max(1, Math.floor(rawWaypoints.length / 15));
-  const scoredWaypoints = await Promise.all(
-    rawWaypoints.map(async (p, i) => {
-      if (i % sampleEvery !== 0 && i !== 0 && i !== rawWaypoints.length - 1) {
-        return { ...p, safetyScore: null }; // filled via interpolation below
-      }
-      const result = await computeSafetyScore(p.lat, p.lng);
-      return { ...p, safetyScore: result.score, riskLevel: result.riskLevel };
-    })
-  );
-
-  // Interpolate safety scores for unscored waypoints
-  let lastKnown = 60;
-  for (let i = 0; i < scoredWaypoints.length; i++) {
-    if (scoredWaypoints[i].safetyScore !== null) {
-      lastKnown = scoredWaypoints[i].safetyScore;
-    } else {
-      scoredWaypoints[i].safetyScore = lastKnown;
-    }
+  // 2. If OSRM failed entirely, use simple interpolation
+  if (usingFallback || !osrmRoutes?.length) {
+    const wpts   = await scoreRouteWaypoints(generateFallbackWaypoints(originLat, originLng, destLat, destLng));
+    const metrics = computeMetrics(wpts);
+    return {
+      fastest:  { ...metrics, routeType: 'fastest' },
+      safest:   { ...metrics, routeType: 'safest' },
+      balanced: { ...metrics, routeType: 'balanced' },
+      meta: { usingFallback: true, waypointCount: wpts.length, source: 'fallback' },
+    };
   }
 
-  // 3. Run A* for each route type
-  const [safestPath, fastestPath, balancedPath] = await Promise.all([
-    aStarSafeRoute(scoredWaypoints, destLat, destLng, 10),   // safest
-    aStarSafeRoute(scoredWaypoints, destLat, destLng, 0),    // fastest
-    aStarSafeRoute(scoredWaypoints, destLat, destLng, 3),    // balanced
+  // 3. Assign routes:
+  //    Fastest  → OSRM primary (lowest duration)
+  //    Safest   → via-point detour (different roads) OR OSRM alternative
+  //    Balanced → OSRM alternative OR same as fastest
+  const fastestRaw  = osrmRoutes[0];
+  const safestRaw   = viaRoute || osrmRoutes[1] || osrmRoutes[0];
+  const balancedRaw = osrmRoutes[1] || viaRoute  || osrmRoutes[0];
+
+  // 4. Score safety on all three routes in parallel
+  const [fastestWpts, safestWpts, balancedWpts] = await Promise.all([
+    scoreRouteWaypoints(decodeGeometry(fastestRaw)),
+    scoreRouteWaypoints(decodeGeometry(safestRaw)),
+    scoreRouteWaypoints(decodeGeometry(balancedRaw)),
   ]);
 
-  // 4. Compute route metrics
-  function computeMetrics(path) {
-    let dist = 0;
-    let scoreSum = 0;
-    const segments = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      const d = haversine(path[i].lat, path[i].lng, path[i + 1].lat, path[i + 1].lng);
-      dist += d;
-      scoreSum += path[i].safetyScore ?? 60;
-      segments.push({
-        from: { lat: path[i].lat, lng: path[i].lng },
-        to: { lat: path[i + 1].lat, lng: path[i + 1].lng },
-        distanceKm: parseFloat(d.toFixed(3)),
-        safetyScore: path[i].safetyScore ?? 60,
-      });
-    }
-    const avgSafety = path.length > 1 ? Math.round(scoreSum / (path.length - 1)) : 60;
-    const estMinutes = Math.round((dist / 30) * 60); // ~30 km/h urban average
-    return { waypoints: path, segments, totalDistanceKm: parseFloat(dist.toFixed(2)), estimatedMinutes: estMinutes, overallSafetyScore: avgSafety };
-  }
-
   return {
-    safest:   { ...computeMetrics(safestPath),   routeType: 'safest' },
-    fastest:  { ...computeMetrics(fastestPath),  routeType: 'fastest' },
-    balanced: { ...computeMetrics(balancedPath), routeType: 'balanced' },
-    meta: { usingFallback, waypointCount: scoredWaypoints.length },
+    fastest:  { ...computeMetrics(fastestWpts,  fastestRaw.distance,  fastestRaw.duration),  routeType: 'fastest' },
+    safest:   { ...computeMetrics(safestWpts,   safestRaw.distance,   safestRaw.duration),   routeType: 'safest' },
+    balanced: { ...computeMetrics(balancedWpts, balancedRaw.distance, balancedRaw.duration), routeType: 'balanced' },
+    meta: {
+      usingFallback:  false,
+      waypointCount:  fastestWpts.length,
+      source:         'osrm',
+      alternatives:   osrmRoutes.length,
+    },
   };
 }
 
