@@ -6,7 +6,7 @@
 ╚══════════════════════════════════════════════════════════════════╝
 """
 
-import os, json, pickle, math
+import os, json, pickle, math, asyncio
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
@@ -101,6 +101,20 @@ async def startup():
     global MODEL
     MODEL = load_model()
     print("[ML] Engine ready on http://localhost:8000")
+    asyncio.create_task(_keep_alive())
+
+async def _keep_alive():
+    """Ping self every 10 min so Render free tier never spins down."""
+    import httpx
+    url = "https://saferoutes-ml.onrender.com/health"
+    while True:
+        await asyncio.sleep(600)  # 10 minutes
+        try:
+            async with httpx.AsyncClient() as client:
+                await client.get(url, timeout=10)
+            print("[ML] Keep-alive ping sent.")
+        except Exception as e:
+            print(f"[ML] Keep-alive ping failed: {e}")
 
 # ── TIME-BASED RISK MULTIPLIER ─────────────────────────────────────────────
 def get_time_multiplier(hour: int) -> float:
