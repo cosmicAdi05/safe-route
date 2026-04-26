@@ -32,7 +32,7 @@ app.use(express.json({ limit: "10mb" }));
 
 // ── Constants ─────────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET || 'saferoutes_hackathon_2025';
-const ML_URL     = process.env.ML_ENGINE_URL || 'http://localhost:8000';
+const ML_URL     = process.env.ML_ENGINE_URL || 'https://saferoutes-ml.onrender.com';
 
 // ── In-Memory Store (no DB needed for demo) ───────────────────────
 const store = { users: [], incidents: [], routes: [], cyberAlerts: [] };
@@ -162,11 +162,11 @@ app.post('/api/routes/orchestrate', authenticate, async (req, res) => {
         origin_lat: oLat, origin_lng: oLng,
         dest_lat: dLat,   dest_lng: dLng,
         lam, time: hour,
-      }, { timeout: 12000 });
+      }, { timeout: 3000 }); // Faster fallback
       mlFastest = mlRes.data.fastest;
       mlSafest  = mlRes.data.safest;
     } catch (mlErr) {
-      console.warn('[Orchestrator] ML Engine offline — using built-in fallback');
+      console.warn('[Orchestrator] ML Engine slow/offline — using built-in safety logic');
     }
 
     // ── STEP 2: Time-based risk multiplier ───────────────────
