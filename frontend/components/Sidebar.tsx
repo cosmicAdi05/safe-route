@@ -1,8 +1,8 @@
 "use client";
-import { Shield, Navigation, AlertTriangle, BarChart2, Zap, LogIn, LogOut, CheckCircle, ShieldAlert } from "lucide-react";
+import { Shield, Navigation, AlertTriangle, BarChart2, Zap, LogIn, LogOut, CheckCircle, ShieldAlert, ShieldCheck } from "lucide-react";
 
 interface SidebarProps {
-  activeTab: "route"|"incidents"|"analytics"|"safety"|"demo";
+  activeTab: "route"|"incidents"|"analytics"|"safety"|"cyber"|"demo";
   setActiveTab: (t: any) => void;
   user: any;
   liveAlerts: any[];
@@ -16,6 +16,7 @@ const TABS = [
   { id:"incidents", shortLabel:"Incidents",icon: AlertTriangle  },
   { id:"analytics", shortLabel:"Data",     icon: BarChart2      },
   { id:"safety",    shortLabel:"Safety",   icon: Shield         },
+  { id:"cyber",     shortLabel:"Cyber",    icon: ShieldCheck    },
   { id:"demo",      shortLabel:"AI Demo",  icon: Zap            },
 ] as const;
 

@@ -440,17 +440,75 @@ const DEMO_ZONES = [
 app.get('/api/zones/nearby',  (_, res) => res.json({ zones: DEMO_ZONES }));
 app.post('/api/zones/seed',   (_, res) => res.json({ inserted: 0, message: 'Using built-in zones' }));
 
+// ── Cybersecurity Hub Endpoints ─────────────────────────────────────
+
+/**
+ * Mock Deepfake Detection API
+ * In a real scenario, this would call a model like FaceForensics++ or a Vision Transformer.
+ */
+app.post('/api/cyber/analyze', authenticate, (req, res) => {
+  const { mediaUrl, incidentId } = req.body;
+  
+  // Simulation: analyze for GAN artifacts, frequency consistency, and metadata anomalies
+  const isAI = Math.random() > 0.7; // 30% chance for demo
+  const confidence = 0.85 + (Math.random() * 0.14);
+  
+  const analysis = {
+    isAI,
+    confidence,
+    markers: isAI ? ['GAN_Artifacts_Detected', 'Frequency_Domain_Anomaly', 'Metadata_Mismatch'] : ['Natural_Noise_Distribution'],
+    timestamp: new Date()
+  };
+
+  if (isAI) {
+    cyberAlerts.unshift({
+      id: Date.now(),
+      type: 'Deepfake',
+      status: 'Flagged',
+      target: `Incident #${incidentId || 'Unknown'}`,
+      confidence,
+      timestamp: new Date()
+    });
+  }
+
+  res.json(analysis);
+});
+
+app.get('/api/cyber/alerts', (req, res) => {
+  res.json({ alerts: cyberAlerts.slice(0, 10) });
+});
+
+app.post('/api/cyber/report', authenticate, (req, res) => {
+  const { type, description, severity } = req.body;
+  const newAlert = {
+    id: Date.now(),
+    type: type || 'Manual Report',
+    description,
+    status: 'Investigating',
+    severity: severity || 'Medium',
+    reporter: req.user.name,
+    timestamp: new Date()
+  };
+  cyberAlerts.unshift(newAlert);
+  res.json({ success: true, alert: newAlert });
+});
+
 // ── Analytics ─────────────────────────────────────────────────────
-app.get('/api/analytics/stats', (_, res) => {
-  const byType = {};
-  store.incidents.forEach(i => { byType[i.type] = (byType[i.type]||0)+1; });
-  res.json({
-    totalIncidents: store.incidents.length,
-    totalRoutes:    store.routes.length,
-    totalUsers:     store.users.length,
-    suspiciousReports: store.incidents.filter(i => i.isSuspicious).length,
-    incidentsByType: Object.entries(byType).map(([_id, count]) => ({ _id, count })),
-  });
+app.get('/api/analytics/stats', (req, res) => {
+  const stats = {
+    totalIncidents: incidents.length,
+    totalRoutes: routesHistory.length,
+    totalUsers: Object.keys(users).length,
+    suspiciousReports: incidents.filter(i => i.isSuspicious).length,
+    cyberThreatsBlocked: cyberAlerts.length,
+    incidentsByType: Object.entries(
+      incidents.reduce((acc, curr) => {
+        acc[curr.type] = (acc[curr.type] || 0) + 1;
+        return acc;
+      }, {})
+    ).map(([_id, count]) => ({ _id, count }))
+  };
+  res.json(stats);
 });
 
 app.get('/api/analytics/trend', (req, res) => {

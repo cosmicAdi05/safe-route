@@ -150,6 +150,19 @@ export const analyticsApi = {
   trend:  (days = 7) => request<{ trend: { _id: string; count: number }[] }>(`${API}/api/analytics/trend?days=${days}`),
 };
 
+// ── Cybersecurity ──────────────────────────────────────────────────────────
+export const cyberApi = {
+  analyze: (mediaUrl: string, incidentId?: string) =>
+    request<CyberAnalysis>(`${API}/api/cyber/analyze`, {
+      method: "POST", body: JSON.stringify({ mediaUrl, incidentId }),
+    }),
+  alerts: () => request<{ alerts: CyberAlert[] }>(`${API}/api/cyber/alerts`),
+  report: (data: Partial<CyberAlert>) =>
+    request<{ success: boolean; alert: CyberAlert }>(`${API}/api/cyber/report`, {
+      method: "POST", body: JSON.stringify(data),
+    }),
+};
+
 // ══════════════════════════════════════════════════════════════════════════
 // TYPES
 // ══════════════════════════════════════════════════════════════════════════
@@ -306,5 +319,25 @@ export interface AnalyticsStats {
   totalRoutes:       number;
   totalUsers:        number;
   suspiciousReports: number;
+  cyberThreatsBlocked: number;
   incidentsByType:   { _id: string; count: number; avgSeverity?: number }[];
+}
+
+export interface CyberAlert {
+  id: number;
+  type: string;
+  status: string;
+  target?: string;
+  confidence?: number;
+  severity?: string;
+  description?: string;
+  reporter?: string;
+  timestamp: string;
+}
+
+export interface CyberAnalysis {
+  isAI: boolean;
+  confidence: number;
+  markers: string[];
+  timestamp: string;
 }
