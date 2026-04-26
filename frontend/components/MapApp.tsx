@@ -246,8 +246,9 @@ export default function MapApp() {
       <div className="absolute inset-0 z-0">
         <MapContainer center={DEFAULT_CENTER} zoom={5} zoomControl={false} style={{ width: "100%", height: "100%" }}>
           <TileLayer
-            url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-            attribution='&copy; CARTO'
+            url="https://tiles.stadiamaps.com/tiles/alidade_smooth_dark/{z}/{x}/{y}{r}.png"
+            attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a>'
+            maxZoom={20}
           />
           <MapClickHandler onMapClick={handleMapClick} />
           <ZoomControl position="bottomright" />
@@ -257,7 +258,7 @@ export default function MapApp() {
             <Circle key={z._id}
               center={[z.location.coordinates[1], z.location.coordinates[0]]}
               radius={z.radius}
-              pathOptions={{ fillColor: "#ef4444", fillOpacity: 0.12, color: "#ef4444", weight: 1, opacity: 0.3 }}
+              pathOptions={{ fillColor: "#ef4444", fillOpacity: 0.07, color: "#ef4444", weight: 1.5, opacity: 0.5 }}
             />
           ))}
 
@@ -266,16 +267,16 @@ export default function MapApp() {
             <Circle key={z._id}
               center={[z.location.coordinates[1], z.location.coordinates[0]]}
               radius={z.radius}
-              pathOptions={{ fillColor: "#f59e0b", fillOpacity: 0.08, color: "#f59e0b", weight: 1, opacity: 0.2 }}
+              pathOptions={{ fillColor: "#f59e0b", fillOpacity: 0.05, color: "#f59e0b", weight: 1, opacity: 0.3 }}
             />
           ))}
 
           {/* Incident Heat circles */}
-          {heatPoints.slice(0, 150).map((pt, i) => (
+          {heatPoints.slice(0, 80).map((pt, i) => (
             <Circle key={i}
               center={[pt.lat, pt.lng]}
-              radius={80 + pt.weight * 25}
-              pathOptions={{ fillColor: INCIDENT_COLORS[pt.type] || "#ef4444", fillOpacity: 0.18, stroke: false }}
+              radius={60 + pt.weight * 18}
+              pathOptions={{ fillColor: INCIDENT_COLORS[pt.type] || "#ef4444", fillOpacity: 0.10, stroke: false }}
             />
           ))}
 
