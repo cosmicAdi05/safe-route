@@ -4,23 +4,23 @@ import { MapContainer, TileLayer, Marker, Popup, Polyline, Circle, useMapEvents,
 import L from "leaflet";
 import { io, Socket } from "socket.io-client";
 import toast from "react-hot-toast";
-import {
-  Shield, Navigation, AlertTriangle, MapPin, Zap, Clock,
-  Activity, User, Radio, Eye, Search, Plus, X, Info
-} from "lucide-react";
+import { AlertTriangle, X, Shield, Activity } from "lucide-react";
 
 import {
-  routeApi, incidentApi, safetyApi, zoneApi, mlApi, getStoredUser,
+  routeApi, incidentApi, safetyApi, zoneApi, getStoredUser,
   type RouteSet, type RouteResult, type Incident, type SafetyZone, type HeatPoint, type User,
 } from "@/lib/api";
+import { predictRisk, type RiskPrediction } from "@/lib/offlineML";
 
-// New Redesigned Components
 import BottomDrawer from "./BottomDrawer";
 import SOSButton from "./SOSButton";
 import FloatingSearch from "./FloatingSearch";
 import AuthModal from "./AuthModal";
+import CyberPanel from "./CyberPanel";
+import AnalyticsPanel from "./AnalyticsPanel";
+import SafeHavenPanel from "./SafeHavenPanel";
 
-// ── Leaflet Setup ─────────────────────────────────────────────
+// ── Leaflet icons ────────────────────────────────────────────────────────────
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
@@ -35,26 +35,52 @@ const INCIDENT_COLORS: Record<string, string> = {
   eve_teasing: "#ec4899", road_hazard: "#f59e0b", crowd_surge: "#06b6d4", other: "#94a3b8",
 };
 
-const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090]; // Delhi
+// Safe Haven markers
+const SAFE_HAVENS = [
+  { id: 1, name: "Connaught Place Police Station", type: "police", lat: 28.6315, lng: 77.2167 },
+  { id: 2, name: "AIIMS Hospital", type: "hospital", lat: 28.5672, lng: 77.2100 },
+  { id: 3, name: "Safdarjung Hospital", type: "hospital", lat: 28.5686, lng: 77.2064 },
+  { id: 5, name: "Metro Station — Rajiv Chowk", type: "metro", lat: 28.6328, lng: 77.2197 },
+  { id: 6, name: "Women Help Center", type: "shelter", lat: 28.5675, lng: 77.2430 },
+];
+
+const HAVEN_COLORS: Record<string, string> = {
+  police: "#6366f1", hospital: "#ef4444", metro: "#22c55e", shelter: "#f59e0b"
+};
+
+const DEFAULT_CENTER: [number, number] = [28.6139, 77.2090];
 
 function MapClickHandler({ onMapClick }: { onMapClick: (lat: number, lng: number) => void }) {
   useMapEvents({ click: (e) => onMapClick(e.latlng.lat, e.latlng.lng) });
   return null;
 }
 
-const makeIcon = (color: string, isPulsing = false) =>
-  L.divIcon({
-    html: `<div class="${isPulsing ? 'animate-pulse-red' : ''}" style="width:14px;height:14px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 0 10px ${color}aa"></div>`,
-    className: "", iconAnchor: [7, 7],
-  });
+const makeIcon = (color: string, size = 12, pulse = false) => L.divIcon({
+  html: `<div style="
+    width:${size}px;height:${size}px;border-radius:50%;
+    background:${color};border:2px solid rgba(255,255,255,0.7);
+    box-shadow:0 0 ${size}px ${color}99;
+    ${pulse ? `animation:pulse 2s infinite` : ""}
+  "></div>`,
+  className: "", iconAnchor: [size / 2, size / 2],
+});
+
+const makeHavenIcon = (color: string) => L.divIcon({
+  html: `<div style="
+    width:20px;height:20px;border-radius:6px;
+    background:${color}22;border:2px solid ${color};
+    display:flex;align-items:center;justify-content:center;
+    box-shadow:0 0 12px ${color}55;
+  "><div style="width:8px;height:8px;border-radius:50%;background:${color};"></div></div>`,
+  className: "", iconAnchor: [10, 10],
+});
 
 export default function MapApp() {
-  // ── State ──────────────────────────────────────────────────
   const [origin, setOrigin] = useState<{lat:number;lng:number;label?:string}|null>(null);
-  const [dest, setDest]     = useState<{lat:number;lng:number;label?:string}|null>(null);
+  const [dest,   setDest]   = useState<{lat:number;lng:number;label?:string}|null>(null);
   const [pickingMode, setPickingMode] = useState<"origin"|"dest"|null>(null);
-  
-  const [routes, setRoutes] = useState<RouteSet|null>(null);
+
+  const [routes, setRoutes]             = useState<RouteSet|null>(null);
   const [selectedRoute, setSelectedRoute] = useState<"safest"|"fastest"|"balanced">("safest");
   const [loadingRoutes, setLoadingRoutes] = useState(false);
 
@@ -62,14 +88,20 @@ export default function MapApp() {
   const [heatPoints, setHeatPoints] = useState<HeatPoint[]>([]);
   const [zones, setZones] = useState<SafetyZone[]>([]);
   const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
-  
-  const [user, setUser] = useState<User|null>(null);
-  const [showCyber, setShowCyber] = useState(false);
+  const [showHavens, setShowHavens] = useState(true);
+
+  // Offline ML
+  const [offlineScore, setOfflineScore] = useState<RiskPrediction | null>(null);
+
+  // Modals
+  const [showCyber, setShowCyber]         = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
-  const [showAuth, setShowAuth] = useState(false);
+  const [showSafeHavens, setShowSafeHavens] = useState(false);
+  const [showAuth, setShowAuth]           = useState(false);
+  const [user, setUser] = useState<User|null>(null);
   const socketRef = useRef<Socket|null>(null);
 
-  // ── Initialization ──────────────────────────────────────────
+  // ── Init ──────────────────────────────────────────────────────────────────
   useEffect(() => {
     const saved = getStoredUser();
     if (saved) setUser(saved);
@@ -77,8 +109,7 @@ export default function MapApp() {
     const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000", { transports: ["websocket"] });
     socketRef.current = socket;
     socket.on("safety-update", (data) => {
-      setLiveAlerts(prev => [{...data, id: Date.now()}, ...prev.slice(0,5)]);
-      fetchNearbyData(data.lat, data.lng);
+      setLiveAlerts(prev => [{ ...data, id: Date.now() }, ...prev.slice(0, 4)]);
     });
 
     fetchNearbyData(DEFAULT_CENTER[0], DEFAULT_CENTER[1]);
@@ -87,85 +118,106 @@ export default function MapApp() {
 
   const fetchNearbyData = useCallback(async (lat: number, lng: number) => {
     try {
-      const [{incidents}, {points}, {zones}] = await Promise.all([
+      const [inc, heat, z] = await Promise.allSettled([
         incidentApi.nearby(lat, lng),
         incidentApi.heatmap(24),
-        zoneApi.nearby(lat, lng)
+        zoneApi.nearby(lat, lng),
       ]);
-      setIncidents(incidents);
-      setHeatPoints(points);
-      setZones(zones);
+      if (inc.status === "fulfilled") setIncidents(inc.value.incidents);
+      if (heat.status === "fulfilled") setHeatPoints(heat.value.points);
+      if (z.status === "fulfilled") setZones(z.value.zones);
     } catch {}
   }, []);
 
-  // ── Actions ────────────────────────────────────────────────
+  // ── Offline ML Score whenever dest changes ────────────────────────────────
+  useEffect(() => {
+    if (!dest) { setOfflineScore(null); return; }
+    const hour = new Date().getHours();
+    predictRisk({
+      hour,
+      isWeekend: [0, 6].includes(new Date().getDay()),
+      lighting: hour >= 20 || hour <= 5 ? 0.2 : 0.8,
+      roadType: "secondary",
+      crowdDensity: 0.4,
+      crimeScore: 0.3,
+      severityAvg: 0.25,
+    }).then(setOfflineScore).catch(() => {});
+  }, [dest]);
+
+  // ── Map Click ────────────────────────────────────────────────────────────
   const handleMapClick = (lat: number, lng: number) => {
     if (pickingMode === "origin") {
       setOrigin({ lat, lng, label: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
       setPickingMode(null);
+      toast.success("Start point set");
     } else if (pickingMode === "dest") {
       setDest({ lat, lng, label: `${lat.toFixed(4)}, ${lng.toFixed(4)}` });
       setPickingMode(null);
+      toast.success("Destination set");
     }
   };
 
+  // ── Compute Routes ───────────────────────────────────────────────────────
   const computeRoutes = async () => {
-    if (!origin || !dest) return toast.error("Select start and end points");
+    if (!origin || !dest) return toast.error("Set start and end on the map");
     setLoadingRoutes(true);
     try {
       const res = await routeApi.orchestrate({
         originLat: origin.lat, originLng: origin.lng,
-        destLat: dest.lat, destLng: dest.lng,
-        time: new Date().getHours(), lambda: 5
+        destLat: dest.lat,     destLng: dest.lng,
+        time: new Date().getHours(), lambda: 5,
       });
-      
-      // Transform to MapRoute
       const transform = (r: any, type: any): RouteResult => ({
         ...r, routeType: type,
         waypoints: r.waypoints || [],
-        totalDistanceKm: r.distance_km || 0,
-        overallSafetyScore: r.safety_score || 60,
-        estimatedMinutes: r.estimatedMinutes || 10
+        totalDistanceKm: r.distance_km || r.totalDistanceKm || 0,
+        overallSafetyScore: r.safety_score || r.overallSafetyScore || 60,
+        estimatedMinutes: r.estimatedMinutes || 12,
       });
-
       setRoutes({
         fastest: transform(res.routes.fastest, "fastest"),
-        safest: transform(res.routes.safest, "safest"),
-        balanced: transform(res.routes.balanced, "balanced"),
-        meta: { usingFallback: false }
+        safest:  transform(res.routes.safest,  "safest"),
+        balanced:transform(res.routes.balanced,"balanced"),
+        meta: { usingFallback: false },
       } as any);
       setSelectedRoute(res.winner);
-      toast.success(`AI selected ${res.winner} path`);
+      toast.success(`AI recommends ${res.winner} route`);
+      fetchNearbyData(origin.lat, origin.lng);
     } catch (err: any) {
-      toast.error(err.message);
+      toast.error(err.message || "Route failed");
     } finally {
       setLoadingRoutes(false);
     }
   };
 
+  // ── Safe Haven Navigate ──────────────────────────────────────────────────
+  const handleHavenNav = (lat: number, lng: number, name: string) => {
+    setDest({ lat, lng, label: name });
+    setShowSafeHavens(false);
+    toast.success(`Destination: ${name}`);
+  };
+
+  const Modal = ({ children, onClose }: { children: React.ReactNode; onClose: () => void }) => (
+    <div className="fixed inset-0 z-[2000] flex items-end sm:items-center justify-center p-0 sm:p-6 bg-black/70 backdrop-blur-sm animate-fade-in" onClick={onClose}>
+      <div
+        className="glass-strong w-full sm:max-w-lg max-h-[85vh] overflow-y-auto scrollbar-none relative animate-slide-up"
+        style={{ borderRadius: "32px 32px 0 0", paddingBottom: 32 }}
+        onClick={e => e.stopPropagation()}
+      >
+        <button onClick={onClose} className="absolute top-5 right-5 w-9 h-9 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-all z-10">
+          <X size={18} />
+        </button>
+        <div className="p-6 pt-8">{children}</div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="w-screen h-screen relative bg-bg overflow-hidden font-sans">
-      
-      {/* ── Top Floating UI ── */}
-      <FloatingSearch 
-        origin={origin} 
-        dest={dest} 
-        onSetOrigin={() => { setPickingMode("origin"); toast("Click map for start point"); }}
-        onSetDest={() => { setPickingMode("dest"); toast("Click map for destination"); }}
-        onCompute={computeRoutes}
-        onOpenCyber={() => setShowCyber(true)}
-        onOpenAnalytics={() => setShowAnalytics(true)}
-        user={user}
-      />
+    <div className="w-screen h-screen relative overflow-hidden mesh-bg">
 
       {/* ── Map Canvas ── */}
       <div className="absolute inset-0 z-0">
-        <MapContainer
-          center={DEFAULT_CENTER}
-          zoom={14}
-          zoomControl={false}
-          style={{ width: "100%", height: "100%" }}
-        >
+        <MapContainer center={DEFAULT_CENTER} zoom={14} zoomControl={false} style={{ width: "100%", height: "100%" }}>
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
             attribution='&copy; CARTO'
@@ -173,116 +225,155 @@ export default function MapApp() {
           <MapClickHandler onMapClick={handleMapClick} />
           <ZoomControl position="bottomright" />
 
-          {/* Danger Zones (Radial Gradients) */}
-          {zones.filter(z => z.type === 'danger').map(zone => (
-            <Circle 
-              key={zone._id}
-              center={[zone.location.coordinates[1], zone.location.coordinates[0]]}
-              radius={zone.radius}
-              pathOptions={{ fillColor: '#ef4444', fillOpacity: 0.15, stroke: false }}
+          {/* Danger Zones */}
+          {zones.filter(z => z.type === "danger").map(z => (
+            <Circle key={z._id}
+              center={[z.location.coordinates[1], z.location.coordinates[0]]}
+              radius={z.radius}
+              pathOptions={{ fillColor: "#ef4444", fillOpacity: 0.12, color: "#ef4444", weight: 1, opacity: 0.3 }}
             />
           ))}
 
-          {/* Active Route with Animated Draw Effect */}
-          {routes && (
-            <Polyline 
-              positions={routes[selectedRoute].waypoints.map(p => [p.lat, p.lng])}
-              pathOptions={{ color: ROUTE_COLORS[selectedRoute], weight: 6, opacity: 0.8 }}
-              className="route-path"
+          {/* Caution Zones */}
+          {zones.filter(z => z.type === "caution").map(z => (
+            <Circle key={z._id}
+              center={[z.location.coordinates[1], z.location.coordinates[0]]}
+              radius={z.radius}
+              pathOptions={{ fillColor: "#f59e0b", fillOpacity: 0.08, color: "#f59e0b", weight: 1, opacity: 0.2 }}
             />
-          )}
+          ))}
 
-          {/* Ghost Routes (Unselected) */}
-          {routes && (["safest", "fastest", "balanced"] as const)
-            .filter(t => t !== selectedRoute)
-            .map(t => (
-              <Polyline 
-                key={t}
-                positions={routes[t].waypoints.map(p => [p.lat, p.lng])}
-                pathOptions={{ color: ROUTE_COLORS[t], weight: 3, opacity: 0.2, dashArray: "10, 10" }}
-              />
-            ))
-          }
+          {/* Incident Heat circles */}
+          {heatPoints.slice(0, 150).map((pt, i) => (
+            <Circle key={i}
+              center={[pt.lat, pt.lng]}
+              radius={80 + pt.weight * 25}
+              pathOptions={{ fillColor: INCIDENT_COLORS[pt.type] || "#ef4444", fillOpacity: 0.18, stroke: false }}
+            />
+          ))}
 
-          {/* Pulsing Incident Markers */}
-          {incidents.map(inc => (
-            <Marker 
-              key={inc._id}
-              position={[inc.location.coordinates[1], inc.location.coordinates[0]]}
-              icon={makeIcon(INCIDENT_COLORS[inc.type] || "#ef4444", true)}
-            >
+          {/* Safe Haven Markers */}
+          {showHavens && SAFE_HAVENS.map(h => (
+            <Marker key={h.id} position={[h.lat, h.lng]} icon={makeHavenIcon(HAVEN_COLORS[h.type])}>
               <Popup>
-                <div className="p-2">
-                  <div className="font-bold uppercase text-[10px] text-slate-400">{inc.type}</div>
-                  <div className="text-sm font-semibold mt-1">{inc.description || "Safety Alert"}</div>
-                  <div className="flex mt-2 items-center gap-1">
-                    <AlertTriangle size={12} className="text-danger" />
-                    <span className="text-[10px] font-bold text-danger">HIGH RISK ZONE</span>
-                  </div>
+                <div style={{ minWidth: 160, color: "#f1f5f9" }}>
+                  <div style={{ fontWeight: 700, fontSize: 13 }}>{h.name}</div>
+                  <div style={{ fontSize: 10, color: HAVEN_COLORS[h.type], fontWeight: 700, marginTop: 4, textTransform: "uppercase" }}>{h.type}</div>
                 </div>
               </Popup>
             </Marker>
           ))}
 
-          {/* Origin/Dest Pins */}
-          {origin && <Marker position={[origin.lat, origin.lng]} icon={makeIcon("#6366f1")} />}
-          {dest && <Marker position={[dest.lat, dest.lng]} icon={makeIcon("#22c55e")} />}
+          {/* Incident Markers (pulsing) */}
+          {incidents.map(inc => (
+            <Marker key={inc._id}
+              position={[inc.location.coordinates[1], inc.location.coordinates[0]]}
+              icon={makeIcon(INCIDENT_COLORS[inc.type] || "#ef4444", 12, true)}
+            >
+              <Popup>
+                <div style={{ color: "#f1f5f9", minWidth: 180 }}>
+                  <div style={{ fontWeight: 700, fontSize: 13, textTransform: "capitalize", marginBottom: 4 }}>
+                    {inc.isSuspicious ? "🚩 " : ""}{inc.type.replace(/_/g," ")}
+                  </div>
+                  <div style={{ fontSize: 11, color: "#94a3b8" }}>Severity {inc.severity}/5</div>
+                  {inc.description && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{inc.description}</div>}
+                </div>
+              </Popup>
+            </Marker>
+          ))}
 
+          {/* Routes */}
+          {routes && (["safest","fastest","balanced"] as const)
+            .filter(t => t !== selectedRoute).map(t => (
+            <Polyline key={t}
+              positions={(routes[t] as RouteResult).waypoints.map(p => [p.lat, p.lng])}
+              pathOptions={{ color: ROUTE_COLORS[t], weight: 3, opacity: 0.2, dashArray: "10,10" }}
+            />
+          ))}
+          {routes && (
+            <Polyline
+              positions={(routes[selectedRoute] as RouteResult).waypoints.map(p => [p.lat, p.lng])}
+              pathOptions={{ color: ROUTE_COLORS[selectedRoute], weight: 6, opacity: 0.9 }}
+            />
+          )}
+
+          {/* Origin / Dest Pins */}
+          {origin && <Marker position={[origin.lat, origin.lng]} icon={makeIcon("#6366f1", 16)}>
+            <Popup><div style={{ color: "#f1f5f9" }}><b>Start</b><br/><span style={{fontSize:11, color:"#94a3b8"}}>{origin.label}</span></div></Popup>
+          </Marker>}
+          {dest && <Marker position={[dest.lat, dest.lng]} icon={makeIcon("#22c55e", 16)}>
+            <Popup><div style={{ color: "#f1f5f9" }}><b>Destination</b><br/><span style={{fontSize:11, color:"#94a3b8"}}>{dest.label}</span></div></Popup>
+          </Marker>}
         </MapContainer>
       </div>
 
-      {/* ── Bottom Safety Drawer ── */}
-      <BottomDrawer 
-        routes={routes} 
-        selectedRoute={selectedRoute} 
-        onSelect={setSelectedRoute}
-        loading={loadingRoutes}
+      {/* ── Floating Search ── */}
+      <FloatingSearch
+        origin={origin} dest={dest}
+        onSetOrigin={() => { setPickingMode("origin"); toast("Tap the map to set your start point"); }}
+        onSetDest={() => { setPickingMode("dest"); toast("Tap the map to set your destination"); }}
+        onCompute={computeRoutes}
+        onOpenCyber={() => setShowCyber(true)}
+        onOpenAnalytics={() => setShowAnalytics(true)}
+        user={user}
       />
 
-      {/* ── Emergency SOS Hub ── */}
-      <SOSButton />
+      {/* ── Map Layer Controls (top right) ── */}
+      <div className="fixed top-6 right-5 z-[800] flex flex-col gap-2">
+        <button
+          onClick={() => setShowSafeHavens(true)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl glass text-xs font-bold text-safe border border-safe/20 hover:bg-safe/10 transition-all"
+        >
+          <Shield size={14} /> Safe Havens
+        </button>
+        <button
+          onClick={() => setShowHavens(v => !v)}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-2xl glass text-xs font-bold text-slate-400 hover:bg-white/5 transition-all"
+        >
+          <Activity size={14} /> {showHavens ? "Hide" : "Show"} Map
+        </button>
+      </div>
 
-      {/* ── Live Alert Overlay ── */}
+      {/* ── Picking Mode Banner ── */}
+      {pickingMode && (
+        <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[800] glass px-6 py-3 rounded-2xl flex items-center gap-3 border border-primary/30 animate-float pointer-events-none">
+          <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+          <span className="text-sm font-bold">Tap map to set {pickingMode === "origin" ? "start" : "destination"}</span>
+        </div>
+      )}
+
+      {/* ── Live Alert Strips ── */}
       {liveAlerts.length > 0 && (
-        <div className="fixed top-40 right-6 z-[1000] flex flex-col gap-2 max-w-[280px]">
-          {liveAlerts.map(alert => (
-            <div key={alert.id} className="glass p-3 rounded-2xl border-l-4 border-l-danger flex gap-3 anim-slide-up">
-              <div className="bg-danger/20 p-2 rounded-lg h-fit">
-                <AlertTriangle size={16} className="text-danger" />
-              </div>
+        <div className="fixed top-36 right-5 z-[800] flex flex-col gap-2 max-w-[260px]">
+          {liveAlerts.slice(0, 2).map(a => (
+            <div key={a.id} className="glass p-3 rounded-2xl flex gap-3 border-l-2 border-l-danger animate-slide-up">
+              <AlertTriangle size={15} className="text-danger flex-shrink-0 mt-0.5" />
               <div>
-                <div className="text-xs font-bold text-slate-200">Live Incident</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">{alert.incidentType?.replace('_',' ')} reported nearby</div>
+                <div className="text-[11px] font-black text-slate-200">Live Incident</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">{a.incidentType?.replace(/_/g, " ")} nearby</div>
               </div>
             </div>
           ))}
         </div>
       )}
 
-      {showAuth && <AuthModal onAuth={(t, u) => { setUser(u); setShowAuth(false); }} onClose={() => setShowAuth(false)} />}
-      
-      {/* Modals */}
-      {showCyber && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="glass w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-[32px] p-6 relative">
-            <button onClick={() => setShowCyber(false)} className="absolute top-6 right-6 text-slate-400 hover:text-white">
-              <X size={24} />
-            </button>
-            <CyberPanel />
-          </div>
-        </div>
-      )}
+      {/* ── Bottom Drawer ── */}
+      <BottomDrawer
+        routes={routes}
+        selectedRoute={selectedRoute}
+        onSelect={setSelectedRoute}
+        loading={loadingRoutes}
+        offlineScore={offlineScore}
+      />
 
-      {showAnalytics && (
-        <div className="fixed inset-0 z-[2000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="glass w-full max-w-lg max-h-[80vh] overflow-y-auto rounded-[32px] p-6 relative">
-            <button onClick={() => setShowAnalytics(false)} className="absolute top-6 right-6 text-slate-400 hover:text-white">
-              <X size={24} />
-            </button>
-            <AnalyticsPanel />
-          </div>
-        </div>
-      )}
+      {/* ── SOS Hub ── */}
+      <SOSButton />
+
+      {/* ── Modals ── */}
+      {showCyber && <Modal onClose={() => setShowCyber(false)}><CyberPanel /></Modal>}
+      {showAnalytics && <Modal onClose={() => setShowAnalytics(false)}><AnalyticsPanel /></Modal>}
+      {showSafeHavens && <Modal onClose={() => setShowSafeHavens(false)}><SafeHavenPanel onNavigateTo={handleHavenNav} /></Modal>}
+      {showAuth && <AuthModal onAuth={(t, u) => { setUser(u); setShowAuth(false); }} onClose={() => setShowAuth(false)} />}
     </div>
   );
 }
