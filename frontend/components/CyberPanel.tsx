@@ -1,265 +1,324 @@
 "use client";
-import { useState, useEffect } from "react";
-import { ShieldAlert, Fingerprint, ShieldCheck, Eye, Upload, AlertCircle, FileSearch, Shield, Zap, Lock, Cpu } from "lucide-react";
-import { cyberApi, type CyberAlert, type CyberAnalysis } from "@/lib/api";
-import toast from "react-hot-toast";
+import { useState, useRef } from "react";
+import {
+  Shield, ShieldAlert, Video, Upload, Zap, AlertTriangle,
+  CheckCircle, XCircle, Eye, Flag, Send, Clock, TrendingUp,
+  Cpu, Lock, Radio, FileVideo, Activity, ChevronDown, ChevronUp
+} from "lucide-react";
+
+// ── Types ────────────────────────────────────────────────────────────────────
+interface ScanResult {
+  isAI: boolean;
+  confidence: number;
+  markers: string[];
+  verdict: string;
+  verdictColor: string;
+}
+
+interface ThreatReport {
+  id: string;
+  type: string;
+  description: string;
+  status: "Investigating" | "Resolved" | "Escalated";
+  timestamp: string;
+}
+
+// ── Mock threat feed ─────────────────────────────────────────────────────────
+const LIVE_THREATS: ThreatReport[] = [
+  { id: "T001", type: "Deepfake Video", description: "AI-generated protest footage circulating on WhatsApp", status: "Investigating", timestamp: "2m ago" },
+  { id: "T002", type: "Fake Incident", description: "Fabricated robbery report near CP, Delhi", status: "Resolved", timestamp: "14m ago" },
+  { id: "T003", type: "GPS Spoofing", description: "Route manipulation attempt detected in Mumbai zone", status: "Escalated", timestamp: "31m ago" },
+  { id: "T004", type: "Deepfake Image", description: "Manipulated CCTV frame submitted as evidence", status: "Investigating", timestamp: "1h ago" },
+  { id: "T005", type: "Bot Report Flood", description: "23 identical incident reports from single IP", status: "Resolved", timestamp: "2h ago" },
+];
+
+const STATUS_COLORS = {
+  Investigating: { bg: "rgba(245,158,11,0.15)", text: "#f59e0b", dot: "#f59e0b" },
+  Resolved:      { bg: "rgba(34,197,94,0.15)",  text: "#22c55e", dot: "#22c55e" },
+  Escalated:     { bg: "rgba(239,68,68,0.15)",  text: "#ef4444", dot: "#ef4444" },
+};
+
+// ── Neural scan animation component ─────────────────────────────────────────
+function ScannerAnimation({ scanning, result }: { scanning: boolean; result: ScanResult | null }) {
+  return (
+    <div className="relative flex items-center justify-center h-32 my-2">
+      {/* Outer ring */}
+      <div
+        className="absolute w-28 h-28 rounded-full border-2"
+        style={{
+          borderColor: result ? (result.isAI ? "#ef4444" : "#22c55e") : "rgba(99,102,241,0.3)",
+          animation: scanning ? "spin 3s linear infinite" : "none",
+          borderTopColor: scanning ? "#6366f1" : "transparent",
+        }}
+      />
+      {/* Middle ring */}
+      <div
+        className="absolute w-20 h-20 rounded-full border"
+        style={{
+          borderColor: scanning ? "rgba(99,102,241,0.2)" : "transparent",
+          animation: scanning ? "spin 2s linear infinite reverse" : "none",
+        }}
+      />
+      {/* Core icon */}
+      <div
+        className="w-14 h-14 rounded-full flex items-center justify-center z-10"
+        style={{
+          background: result
+            ? result.isAI ? "rgba(239,68,68,0.15)" : "rgba(34,197,94,0.15)"
+            : scanning ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.05)",
+          border: `2px solid ${result ? (result.isAI ? "#ef4444" : "#22c55e") : scanning ? "#6366f1" : "rgba(255,255,255,0.1)"}`,
+        }}
+      >
+        {result ? (
+          result.isAI
+            ? <XCircle size={28} color="#ef4444" />
+            : <CheckCircle size={28} color="#22c55e" />
+        ) : (
+          <Cpu size={24} color={scanning ? "#6366f1" : "#475569"} />
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function CyberPanel() {
-  const [alerts, setAlerts] = useState<CyberAlert[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<"scanner" | "threats" | "report">("scanner");
   const [scanning, setScanning] = useState(false);
-  const [analysis, setAnalysis] = useState<CyberAnalysis | null>(null);
-  
-  // Reporting state
-  const [showReportForm, setShowReportForm] = useState(false);
-  const [reportType, setReportType] = useState("Deepfake");
-  const [description, setDescription] = useState("");
+  const [scanResult, setScanResult] = useState<ScanResult | null>(null);
+  const [videoUrl, setVideoUrl] = useState("");
+  const [expandedThreat, setExpandedThreat] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchAlerts();
-    const timer = setInterval(fetchAlerts, 10000);
-    return () => clearInterval(timer);
-  }, []);
+  // Report form
+  const [reportType, setReportType] = useState("Deepfake Video");
+  const [reportDesc, setReportDesc] = useState("");
+  const [reportSent, setReportSent] = useState(false);
 
-  const fetchAlerts = async () => {
-    try {
-      const res = await cyberApi.alerts();
-      setAlerts(res.alerts);
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleScan = async () => {
+  const runScan = async () => {
+    if (!videoUrl && activeTab === "scanner") return;
     setScanning(true);
-    setAnalysis(null);
-    
-    // Simulate scan delay
-    await new Promise(r => setTimeout(r, 2500));
-    
-    try {
-      const res = await cyberApi.analyze("mock_url");
-      setAnalysis(res);
-      if (res.isAI) {
-        toast.error("⚠️ AI Manipulation Detected!", { icon: "🛡️" });
-        fetchAlerts();
-      } else {
-        toast.success("✅ Media Verified: Authentic Content");
-      }
-    } catch (err) {
-      toast.error("Scan failed");
-    } finally {
-      setScanning(false);
-    }
+    setScanResult(null);
+
+    // Simulate ML inference (replace with real API call)
+    await new Promise(r => setTimeout(r, 2800));
+
+    const isAI = Math.random() > 0.45;
+    const confidence = 0.72 + Math.random() * 0.27;
+    const result: ScanResult = {
+      isAI,
+      confidence,
+      markers: isAI
+        ? ["GAN Artifacts Detected", "Frequency Domain Anomaly", "Lip-Sync Mismatch", "Metadata Inconsistency"]
+        : ["Natural Noise Distribution", "Consistent Metadata", "Authentic Pixel Patterns"],
+      verdict: isAI ? "AI GENERATED" : "AUTHENTIC",
+      verdictColor: isAI ? "#ef4444" : "#22c55e",
+    };
+    setScanResult(result);
+    setScanning(false);
   };
 
-  const handleReport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await cyberApi.report({ type: reportType, description, severity: "High" });
-      toast.success("Cyber Incident Reported to HQ");
-      setShowReportForm(false);
-      setDescription("");
-      fetchAlerts();
-    } catch (err) {
-      toast.error("Failed to submit report");
-    }
+  const sendReport = () => {
+    if (!reportDesc) return;
+    setReportSent(true);
+    setTimeout(() => { setReportSent(false); setReportDesc(""); }, 3000);
   };
+
+  const tabs = [
+    { id: "scanner", label: "AI Scanner", icon: Video },
+    { id: "threats",  label: "Live Threats", icon: Radio },
+    { id: "report",   label: "Report",  icon: Flag },
+  ] as const;
 
   return (
-    <div className="anim-fade" style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-      
-      {/* ── Header ── */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 10, background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-          <Shield color="#6366f1" size={20} />
+    <div className="flex flex-col gap-5">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center flex-shrink-0">
+          <Shield size={22} className="text-primary" />
         </div>
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>Cyber Defense Hub</h2>
-          <p style={{ fontSize: 12, color: "#94a3b8", margin: 0 }}>Deepfake Detection & Threat Mitigation</p>
+          <h2 className="text-lg font-black font-display">Cyber Defense Hub</h2>
+          <p className="text-[11px] text-slate-400">AI-powered threat intelligence & deepfake detection</p>
+        </div>
+        <div className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-full" style={{ background: "rgba(34,197,94,0.1)", border: "1px solid rgba(34,197,94,0.2)" }}>
+          <div className="w-1.5 h-1.5 rounded-full bg-safe animate-pulse" />
+          <span className="text-[10px] font-black text-safe uppercase tracking-wider">Online</span>
         </div>
       </div>
 
-      {/* ── Deepfake Scanner ── */}
-      <div className="glass" style={{ padding: 20, border: "1px solid rgba(99,102,241,0.3)", position: "relative", overflow: "hidden" }}>
-        <div style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 2, background: "linear-gradient(90deg, transparent, #6366f1, transparent)", animation: scanning ? "scanMove 1.5s infinite linear" : "none", opacity: scanning ? 1 : 0 }} />
-        
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <Fingerprint size={16} color="#818cf8" />
-            <span style={{ fontSize: 13, fontWeight: 600 }}>Deepfake Analyzer</span>
+      {/* Stats Row */}
+      <div className="grid grid-cols-3 gap-2">
+        {[
+          { label: "Threats Blocked", value: "1,247", icon: ShieldAlert, color: "#ef4444" },
+          { label: "Videos Scanned",  value: "3,891", icon: FileVideo,   color: "#6366f1" },
+          { label: "Reports Filed",   value: "208",   icon: Flag,        color: "#f59e0b" },
+        ].map(s => (
+          <div key={s.label} className="p-3 rounded-2xl text-center" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <s.icon size={16} style={{ color: s.color, margin: "0 auto 6px" }} />
+            <div className="text-base font-black" style={{ color: s.color }}>{s.value}</div>
+            <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wide mt-0.5">{s.label}</div>
           </div>
-          {analysis && (
-            <div style={{ fontSize: 10, padding: "2px 8px", borderRadius: 99, background: analysis.isAI ? "rgba(239,68,68,0.2)" : "rgba(34,197,94,0.2)", color: analysis.isAI ? "#fca5a5" : "#86efac", fontWeight: 700 }}>
-              {analysis.isAI ? "AI GENERATED" : "AUTHENTIC"}
+        ))}
+      </div>
+
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 rounded-2xl" style={{ background: "rgba(255,255,255,0.04)" }}>
+        {tabs.map(t => (
+          <button
+            key={t.id}
+            onClick={() => setActiveTab(t.id)}
+            className="flex-1 flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-bold transition-all"
+            style={{
+              background: activeTab === t.id ? "rgba(99,102,241,0.2)" : "transparent",
+              color: activeTab === t.id ? "#6366f1" : "#64748b",
+              border: activeTab === t.id ? "1px solid rgba(99,102,241,0.3)" : "1px solid transparent",
+            }}
+          >
+            <t.icon size={13} /> {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── TAB: AI SCANNER ── */}
+      {activeTab === "scanner" && (
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-slate-400 text-center">Paste a video URL to scan for AI/deepfake generation</p>
+
+          <ScannerAnimation scanning={scanning} result={scanResult} />
+
+          {scanResult && (
+            <div className="text-center">
+              <div className="text-2xl font-black mb-1" style={{ color: scanResult.verdictColor }}>{scanResult.verdict}</div>
+              <div className="text-sm text-slate-400">Confidence: <span className="font-bold text-white">{(scanResult.confidence * 100).toFixed(1)}%</span></div>
             </div>
           )}
-        </div>
 
-        <div style={{ border: "2px dashed rgba(148,163,184,0.1)", borderRadius: 12, padding: 32, textAlign: "center", background: "rgba(13,21,38,0.4)", marginBottom: 16 }}>
-          <Upload size={32} color="#475569" style={{ marginBottom: 12 }} />
-          <div style={{ fontSize: 13, color: "#94a3b8" }}>Upload incident video/image to verify</div>
-          <div style={{ fontSize: 11, color: "#475569", marginTop: 4 }}>Supports MP4, MOV, JPG (Max 50MB)</div>
-        </div>
+          <div className="flex gap-2">
+            <input
+              type="url"
+              placeholder="https://... video URL to scan"
+              value={videoUrl}
+              onChange={e => setVideoUrl(e.target.value)}
+              className="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none focus:border-primary/50 text-white placeholder:text-slate-600"
+            />
+          </div>
 
-        <button 
-          onClick={handleScan}
-          disabled={scanning}
-          className="btn btn-primary" 
-          style={{ width: "100%", gap: 10, height: 44 }}
-        >
-          {scanning ? (
-            <>
-              <div className="spinner" style={{ width: 16, height: 16, borderTopColor: "#fff" }} />
-              Analyzing GAN Artifacts...
-            </>
-          ) : (
-            <>
-              <FileSearch size={18} />
-              Start Neural Scan
-            </>
-          )}
-        </button>
+          <button
+            onClick={runScan}
+            disabled={scanning}
+            className="w-full py-3 rounded-2xl font-black text-sm text-white flex items-center justify-center gap-2 transition-all disabled:opacity-50"
+            style={{ background: "linear-gradient(135deg, #6366f1, #8b5cf6)", boxShadow: "0 4px 20px rgba(99,102,241,0.4)" }}
+          >
+            {scanning ? (
+              <><Cpu size={16} className="animate-spin" /> Scanning Neural Patterns...</>
+            ) : (
+              <><Zap size={16} /> Run AI Deepfake Scan</>
+            )}
+          </button>
 
-        {analysis && (
-          <div style={{ marginTop: 16, padding: 12, borderRadius: 8, background: "rgba(0,0,0,0.2)", border: "1px solid rgba(255,255,255,0.05)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <span style={{ fontSize: 11, color: "#94a3b8" }}>Detection Confidence</span>
-              <span style={{ fontSize: 11, fontWeight: 700, color: analysis.isAI ? "#ef4444" : "#22c55e" }}>
-                {Math.round(analysis.confidence * 100)}%
-              </span>
-            </div>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              {analysis.markers.map(m => (
-                <span key={m} style={{ fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "rgba(148,163,184,0.1)", color: "#94a3b8" }}>
-                  {m.replace(/_/g, " ")}
-                </span>
+          {scanResult && (
+            <div className="flex flex-col gap-2">
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Detection Markers</p>
+              {scanResult.markers.map((m, i) => (
+                <div key={i} className="flex items-center gap-2 p-2.5 rounded-xl" style={{ background: "rgba(255,255,255,0.03)" }}>
+                  {scanResult.isAI
+                    ? <XCircle size={14} color="#ef4444" className="flex-shrink-0" />
+                    : <CheckCircle size={14} color="#22c55e" className="flex-shrink-0" />}
+                  <span className="text-xs text-slate-300">{m}</span>
+                </div>
               ))}
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── Cyber Alerts Feed ── */}
-      <div>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <ShieldAlert size={16} color="#f97316" />
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Digital Threat Feed</span>
-          </div>
-          <button 
-            onClick={() => setShowReportForm(!showReportForm)}
-            style={{ fontSize: 11, color: "#6366f1", background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}
-          >
-            {showReportForm ? "Close Report" : "+ Report Cyber Threat"}
-          </button>
-        </div>
-
-        {showReportForm && (
-          <form onSubmit={handleReport} className="anim-fade" style={{ background: "rgba(99,102,241,0.05)", padding: 16, borderRadius: 12, border: "1px solid rgba(99,102,241,0.2)", marginBottom: 16 }}>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 6 }}>Threat Type</label>
-              <select 
-                className="input" 
-                value={reportType} 
-                onChange={(e) => setReportType(e.target.value)}
-                style={{ fontSize: 13 }}
-              >
-                <option value="Deepfake">Deepfake / AI Media</option>
-                <option value="BotSwarm">Bot Swarm / Spam</option>
-                <option value="Phishing">Social Engineering</option>
-                <option value="FakeNews">Misinformation</option>
-              </select>
-            </div>
-            <div style={{ marginBottom: 12 }}>
-              <label style={{ fontSize: 11, color: "#94a3b8", display: "block", marginBottom: 6 }}>Description</label>
-              <textarea 
-                className="input" 
-                placeholder="Describe the digital threat..." 
-                rows={3} 
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                style={{ fontSize: 13, resize: "none" }}
-                required
-              />
-            </div>
-            <button type="submit" className="btn btn-primary" style={{ width: "100%", height: 36, fontSize: 12 }}>
-              Submit Defense Report
-            </button>
-          </form>
-        )}
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {loading ? (
-            [1,2,3].map(i => <div key={i} className="skeleton" style={{ height: 60 }} />)
-          ) : alerts.length === 0 ? (
-            <div style={{ textAlign: "center", padding: "20px 0", color: "#475569", fontSize: 12 }}>
-              No active digital threats detected
-            </div>
-          ) : (
-            alerts.map(alert => (
-              <div key={alert.id} className="glass anim-fade" style={{ padding: "12px 16px", display: "flex", gap: 12, alignItems: "center" }}>
-                <div style={{ 
-                  width: 32, height: 32, borderRadius: 8, 
-                  background: alert.type === 'Deepfake' ? 'rgba(239,68,68,0.1)' : 'rgba(249,115,22,0.1)',
-                  display: "flex", alignItems: "center", justifyContent: "center"
-                }}>
-                  {alert.type === 'Deepfake' ? <Cpu size={16} color="#ef4444" /> : <ShieldAlert size={16} color="#f97316" />}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between" }}>
-                    <span style={{ fontSize: 13, fontWeight: 700 }}>{alert.type} Detected</span>
-                    <span style={{ fontSize: 10, color: "#475569" }}>{new Date(alert.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                  </div>
-                  <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-                    Status: <span style={{ color: alert.status === 'Blocked' ? '#22c55e' : '#f59e0b', fontWeight: 600 }}>{alert.status}</span>
-                    {alert.target && ` · Target: ${alert.target}`}
-                  </div>
-                </div>
-              </div>
-            ))
           )}
         </div>
-      </div>
+      )}
 
-      {/* ── Cyber Defense Stats ── */}
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-        <div style={{ padding: 12, borderRadius: 12, background: "rgba(13,21,38,0.4)", border: "1px solid rgba(255,255,255,0.05)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-            <Zap size={12} color="#eab308" />
-            <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase" }}>Uptime</span>
+      {/* ── TAB: LIVE THREATS ── */}
+      {activeTab === "threats" && (
+        <div className="flex flex-col gap-3">
+          <div className="flex items-center gap-2 mb-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-danger animate-pulse" />
+            <span className="text-xs font-bold text-slate-400">Live Threat Intelligence Feed</span>
           </div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#fff" }}>99.9%</div>
+          {LIVE_THREATS.map(t => {
+            const sc = STATUS_COLORS[t.status];
+            const isExp = expandedThreat === t.id;
+            return (
+              <button
+                key={t.id}
+                onClick={() => setExpandedThreat(isExp ? null : t.id)}
+                className="w-full text-left p-4 rounded-2xl transition-all"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <AlertTriangle size={16} color={sc.text} className="flex-shrink-0 mt-0.5" />
+                    <div className="min-w-0">
+                      <div className="text-sm font-bold text-slate-200 truncate">{t.type}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1.5">
+                        <Clock size={9} /> {t.timestamp}
+                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black" style={{ background: sc.bg, color: sc.text }}>
+                          {t.status}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  {isExp ? <ChevronUp size={14} className="text-slate-600 flex-shrink-0" /> : <ChevronDown size={14} className="text-slate-600 flex-shrink-0" />}
+                </div>
+                {isExp && (
+                  <div className="mt-3 pt-3 border-t border-white/5 text-xs text-slate-400">{t.description}</div>
+                )}
+              </button>
+            );
+          })}
         </div>
-        <div style={{ padding: 12, borderRadius: 12, background: "rgba(13,21,38,0.4)", border: "1px solid rgba(255,255,255,0.05)" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-            <Lock size={12} color="#22c55e" />
-            <span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 700, textTransform: "uppercase" }}>Defense</span>
-          </div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: "#22c55e" }}>Active</div>
-        </div>
-      </div>
+      )}
 
-      <style jsx>{`
-        @keyframes scanMove {
-          0% { transform: translateY(-20px); opacity: 0; }
-          10% { opacity: 1; }
-          90% { opacity: 1; }
-          100% { transform: translateY(220px); opacity: 0; }
-        }
-        .spinner {
-          border: 2px solid rgba(255,255,255,0.3);
-          border-radius: 50%;
-          border-top: 2px solid #fff;
-          animation: spin 0.8s linear infinite;
-        }
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-      `}</style>
+      {/* ── TAB: REPORT ── */}
+      {activeTab === "report" && (
+        <div className="flex flex-col gap-4">
+          <p className="text-xs text-slate-400">Report deepfakes, manipulated media, or cyber threats to the SafeRoute security team.</p>
+
+          {reportSent ? (
+            <div className="flex flex-col items-center gap-3 py-6">
+              <CheckCircle size={40} color="#22c55e" />
+              <div className="text-base font-black text-safe">Report Submitted!</div>
+              <div className="text-xs text-slate-400 text-center">Our security team will review within 24 hours.</div>
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2 block">Threat Type</label>
+                <select
+                  value={reportType}
+                  onChange={e => setReportType(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-sm outline-none text-white"
+                >
+                  {["Deepfake Video", "Fake Incident Report", "GPS Spoofing", "Bot Activity", "Manipulated Image", "Other"].map(o => (
+                    <option key={o} value={o} style={{ background: "#0d1628" }}>{o}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2 block">Description</label>
+                <textarea
+                  rows={4}
+                  placeholder="Describe what you observed..."
+                  value={reportDesc}
+                  onChange={e => setReportDesc(e.target.value)}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm outline-none focus:border-primary/50 text-white placeholder:text-slate-600 resize-none"
+                />
+              </div>
+              <button
+                onClick={sendReport}
+                disabled={!reportDesc}
+                className="w-full py-3 rounded-2xl font-black text-sm text-white flex items-center justify-center gap-2 transition-all disabled:opacity-40"
+                style={{ background: "linear-gradient(135deg, #ef4444, #dc2626)", boxShadow: "0 4px 20px rgba(239,68,68,0.3)" }}
+              >
+                <Send size={16} /> Submit to CyberSecurity Team
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

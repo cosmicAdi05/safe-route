@@ -2,18 +2,47 @@
 import { useState, useEffect } from "react";
 import { Shield, MapPin, Phone, Navigation, Clock, Star, Search, X, Zap, Heart, Building2, ShieldCheck } from "lucide-react";
 
-// Delhi-area Safe Havens dataset
+// All-India Safe Havens Dataset
 const SAFE_HAVENS = [
-  { id: 1, name: "Connaught Place Police Station", type: "police", lat: 28.6315, lng: 77.2167, phone: "011-23412345", rating: 4.2, distance: "0.8 km", isOpen: true },
-  { id: 2, name: "AIIMS Hospital", type: "hospital", lat: 28.5672, lng: 77.2100, phone: "011-26588500", rating: 4.8, distance: "2.1 km", isOpen: true },
-  { id: 3, name: "Safdarjung Hospital", type: "hospital", lat: 28.5686, lng: 77.2064, phone: "011-26165060", rating: 4.5, distance: "2.3 km", isOpen: true },
-  { id: 4, name: "Hauz Khas Police Station", type: "police", lat: 28.5494, lng: 77.2001, phone: "011-26967890", rating: 3.9, distance: "3.4 km", isOpen: true },
-  { id: 5, name: "Metro Station — Rajiv Chowk", type: "metro", lat: 28.6328, lng: 77.2197, phone: "", rating: 4.6, distance: "0.9 km", isOpen: true },
-  { id: 6, name: "Women Help Center — Lajpat Nagar", type: "shelter", lat: 28.5675, lng: 77.2430, phone: "1091", rating: 4.7, distance: "3.1 km", isOpen: true },
-  { id: 7, name: "IGI Airport Security", type: "police", lat: 28.5562, lng: 77.0999, phone: "011-25601234", rating: 4.1, distance: "8.2 km", isOpen: true },
-  { id: 8, name: "Apollo Hospital Sarita Vihar", type: "hospital", lat: 28.5279, lng: 77.2900, phone: "011-29871234", rating: 4.9, distance: "6.1 km", isOpen: true },
-  { id: 9, name: "Malviya Nagar Police Station", type: "police", lat: 28.5355, lng: 77.2153, phone: "011-29563421", rating: 3.8, distance: "4.5 km", isOpen: false },
-  { id: 10, name: "Khan Market Metro Station", type: "metro", lat: 28.5990, lng: 77.2271, phone: "", rating: 4.3, distance: "1.7 km", isOpen: true },
+  // ── DELHI ──────────────────────────────────────────────
+  { id: 1,  name: "Connaught Place Police Station",   type: "police",   lat: 28.6315, lng: 77.2167, phone: "011-23412345", rating: 4.2, distance: "0.8 km",  city: "Delhi",     isOpen: true },
+  { id: 2,  name: "AIIMS Hospital",                    type: "hospital", lat: 28.5672, lng: 77.2100, phone: "011-26588500", rating: 4.8, distance: "2.1 km",  city: "Delhi",     isOpen: true },
+  { id: 3,  name: "Safdarjung Hospital",               type: "hospital", lat: 28.5686, lng: 77.2064, phone: "011-26165060", rating: 4.5, distance: "2.3 km",  city: "Delhi",     isOpen: true },
+  { id: 4,  name: "Hauz Khas Police Station",          type: "police",   lat: 28.5494, lng: 77.2001, phone: "011-26967890", rating: 3.9, distance: "3.4 km",  city: "Delhi",     isOpen: true },
+  { id: 5,  name: "Rajiv Chowk Metro Station",         type: "metro",    lat: 28.6328, lng: 77.2197, phone: "",             rating: 4.6, distance: "0.9 km",  city: "Delhi",     isOpen: true },
+  { id: 6,  name: "Women Help Center — Lajpat Nagar", type: "shelter",  lat: 28.5675, lng: 77.2430, phone: "1091",         rating: 4.7, distance: "3.1 km",  city: "Delhi",     isOpen: true },
+  { id: 7,  name: "Malviya Nagar Police Station",      type: "police",   lat: 28.5355, lng: 77.2153, phone: "011-29563421", rating: 3.8, distance: "4.5 km",  city: "Delhi",     isOpen: true },
+  { id: 8,  name: "Khan Market Metro Station",         type: "metro",    lat: 28.5990, lng: 77.2271, phone: "",             rating: 4.3, distance: "1.7 km",  city: "Delhi",     isOpen: true },
+  { id: 9,  name: "Lodi Road Police Station",          type: "police",   lat: 28.5900, lng: 77.2270, phone: "011-24691234", rating: 4.0, distance: "2.0 km",  city: "Delhi",     isOpen: true },
+  { id: 10, name: "RML Hospital",                     type: "hospital", lat: 28.6362, lng: 77.2009, phone: "011-23404270", rating: 4.3, distance: "1.2 km",  city: "Delhi",     isOpen: true },
+  // ── MUMBAI ─────────────────────────────────────────────
+  { id: 11, name: "Colaba Police Station",             type: "police",   lat: 18.9147, lng: 72.8230, phone: "022-22021855", rating: 4.1, distance: "1.0 km",  city: "Mumbai",    isOpen: true },
+  { id: 12, name: "KEM Hospital",                      type: "hospital", lat: 18.9971, lng: 72.8414, phone: "022-24107000", rating: 4.6, distance: "3.2 km",  city: "Mumbai",    isOpen: true },
+  { id: 13, name: "Andheri Police Station",            type: "police",   lat: 19.1197, lng: 72.8468, phone: "022-26201234", rating: 3.9, distance: "5.1 km",  city: "Mumbai",    isOpen: true },
+  { id: 14, name: "Dadar Police Station",              type: "police",   lat: 19.0178, lng: 72.8478, phone: "022-24224567", rating: 4.0, distance: "2.8 km",  city: "Mumbai",    isOpen: true },
+  { id: 15, name: "CST Metro Station",                 type: "metro",    lat: 18.9398, lng: 72.8355, phone: "",             rating: 4.4, distance: "1.5 km",  city: "Mumbai",    isOpen: true },
+  { id: 16, name: "Nair Hospital",                     type: "hospital", lat: 18.9648, lng: 72.8175, phone: "022-23027600", rating: 4.5, distance: "2.0 km",  city: "Mumbai",    isOpen: true },
+  // ── BANGALORE ──────────────────────────────────────────
+  { id: 17, name: "Cubbon Park Police Station",        type: "police",   lat: 12.9762, lng: 77.5929, phone: "080-22381234", rating: 4.2, distance: "1.3 km",  city: "Bangalore", isOpen: true },
+  { id: 18, name: "Bowring Hospital",                  type: "hospital", lat: 12.9780, lng: 77.6090, phone: "080-25546789", rating: 4.4, distance: "2.5 km",  city: "Bangalore", isOpen: true },
+  { id: 19, name: "MG Road Metro Station",             type: "metro",    lat: 12.9757, lng: 77.6085, phone: "",             rating: 4.7, distance: "0.8 km",  city: "Bangalore", isOpen: true },
+  { id: 20, name: "Koramangala Police Station",        type: "police",   lat: 12.9352, lng: 77.6245, phone: "080-25506789", rating: 3.8, distance: "4.0 km",  city: "Bangalore", isOpen: true },
+  // ── CHENNAI ────────────────────────────────────────────
+  { id: 21, name: "Anna Salai Police Station",         type: "police",   lat: 13.0604, lng: 80.2496, phone: "044-28412345", rating: 4.0, distance: "1.5 km",  city: "Chennai",   isOpen: true },
+  { id: 22, name: "Government General Hospital",       type: "hospital", lat: 13.0827, lng: 80.2707, phone: "044-25305000", rating: 4.5, distance: "3.0 km",  city: "Chennai",   isOpen: true },
+  { id: 23, name: "Chennai Central Metro",             type: "metro",    lat: 13.0827, lng: 80.2757, phone: "",             rating: 4.3, distance: "2.2 km",  city: "Chennai",   isOpen: true },
+  // ── KOLKATA ────────────────────────────────────────────
+  { id: 24, name: "Lalbazar Police HQ",                type: "police",   lat: 22.5741, lng: 88.3634, phone: "033-22500371", rating: 4.3, distance: "1.0 km",  city: "Kolkata",   isOpen: true },
+  { id: 25, name: "SSKM Hospital",                     type: "hospital", lat: 22.5348, lng: 88.3390, phone: "033-22041394", rating: 4.6, distance: "3.5 km",  city: "Kolkata",   isOpen: true },
+  { id: 26, name: "Park Street Metro",                 type: "metro",    lat: 22.5531, lng: 88.3516, phone: "",             rating: 4.4, distance: "1.8 km",  city: "Kolkata",   isOpen: true },
+  // ── HYDERABAD ──────────────────────────────────────────
+  { id: 27, name: "Begumpet Police Station",           type: "police",   lat: 17.4480, lng: 78.4680, phone: "040-27895234", rating: 4.1, distance: "2.0 km",  city: "Hyderabad", isOpen: true },
+  { id: 28, name: "Osmania General Hospital",          type: "hospital", lat: 17.3716, lng: 78.4743, phone: "040-24600123", rating: 4.4, distance: "4.1 km",  city: "Hyderabad", isOpen: true },
+  { id: 29, name: "Ameerpet Metro Station",            type: "metro",    lat: 17.4374, lng: 78.4482, phone: "",             rating: 4.6, distance: "1.5 km",  city: "Hyderabad", isOpen: true },
+  // ── PUNE ───────────────────────────────────────────────
+  { id: 30, name: "Shivajinagar Police Station",       type: "police",   lat: 18.5314, lng: 73.8446, phone: "020-25531234", rating: 4.0, distance: "1.2 km",  city: "Pune",      isOpen: true },
+  { id: 31, name: "Sassoon General Hospital",          type: "hospital", lat: 18.5195, lng: 73.8553, phone: "020-26127201", rating: 4.5, distance: "2.0 km",  city: "Pune",      isOpen: true },
+  { id: 32, name: "Women Safety Center — Pune",        type: "shelter",  lat: 18.5204, lng: 73.8567, phone: "1091",         rating: 4.8, distance: "2.1 km",  city: "Pune",      isOpen: true },
 ];
 
 const TYPE_CONFIG: Record<string, { icon: any; color: string; bg: string; label: string }> = {
