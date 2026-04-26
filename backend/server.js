@@ -23,8 +23,9 @@ app.use(helmet({ contentSecurityPolicy: false }));
 const ALLOWED_ORIGINS = [
   process.env.FRONTEND_URL || "http://localhost:3000",
   "http://localhost:3000",
-  "https://saferoutes-ai.vercel.app",
-  /\.vercel\.app$/,   // any vercel preview URL
+  "http://localhost:3001",
+  "https://safe-route-nav.vercel.app",
+  /\.vercel\.app$/,
 ];
 app.use(cors({
   origin: (origin, cb) => {
@@ -48,7 +49,7 @@ const JWT_SECRET = process.env.JWT_SECRET || 'saferoutes_hackathon_2025';
 const ML_URL     = process.env.ML_ENGINE_URL || 'http://localhost:8000';
 
 // ── In-Memory Store (no DB needed for demo) ───────────────────────
-const store = { users: [], incidents: [], routes: [] };
+const store = { users: [], incidents: [], routes: [], cyberAlerts: [] };
 
 // ── CYBERSECURITY: JWT Middleware ─────────────────────────────────
 const authenticate = (req, res, next) => {
@@ -461,7 +462,7 @@ app.post('/api/cyber/analyze', authenticate, (req, res) => {
   };
 
   if (isAI) {
-    cyberAlerts.unshift({
+    store.cyberAlerts.unshift({
       id: Date.now(),
       type: 'Deepfake',
       status: 'Flagged',
@@ -470,16 +471,16 @@ app.post('/api/cyber/analyze', authenticate, (req, res) => {
       timestamp: new Date()
     });
   }
-
   res.json(analysis);
 });
 
 app.get('/api/cyber/alerts', (req, res) => {
-  res.json({ alerts: cyberAlerts.slice(0, 10) });
+  res.json({ alerts: store.cyberAlerts.slice(0, 10) });
 });
 
 app.post('/api/cyber/report', authenticate, (req, res) => {
   const { type, description, severity } = req.body;
+  if (!req.user) return res.status(401).json({ error: 'Login required' });
   const newAlert = {
     id: Date.now(),
     type: type || 'Manual Report',
@@ -489,20 +490,20 @@ app.post('/api/cyber/report', authenticate, (req, res) => {
     reporter: req.user.name,
     timestamp: new Date()
   };
-  cyberAlerts.unshift(newAlert);
+  store.cyberAlerts.unshift(newAlert);
   res.json({ success: true, alert: newAlert });
 });
 
 // ── Analytics ─────────────────────────────────────────────────────
 app.get('/api/analytics/stats', (req, res) => {
   const stats = {
-    totalIncidents: incidents.length,
-    totalRoutes: routesHistory.length,
-    totalUsers: Object.keys(users).length,
-    suspiciousReports: incidents.filter(i => i.isSuspicious).length,
-    cyberThreatsBlocked: cyberAlerts.length,
+    totalIncidents: store.incidents.length,
+    totalRoutes: store.routes.length,
+    totalUsers: store.users.length,
+    suspiciousReports: store.incidents.filter(i => i.isSuspicious).length,
+    cyberThreatsBlocked: store.cyberAlerts.length,
     incidentsByType: Object.entries(
-      incidents.reduce((acc, curr) => {
+      store.incidents.reduce((acc, curr) => {
         acc[curr.type] = (acc[curr.type] || 0) + 1;
         return acc;
       }, {})
