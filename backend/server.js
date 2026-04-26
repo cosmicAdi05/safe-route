@@ -28,14 +28,9 @@ const ALLOWED_ORIGINS = [
   /\.vercel\.app$/,
 ];
 app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin) return cb(null, true); // allow non-browser (Render health checks)
-    const ok = ALLOWED_ORIGINS.some(o =>
-      typeof o === "string" ? o === origin : o.test(origin)
-    );
-    cb(ok ? null : new Error(`CORS: origin ${origin} not allowed`), ok);
-  },
-  credentials: true,
+  origin: '*',
+  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
