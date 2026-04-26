@@ -27,17 +27,8 @@ const ALLOWED_ORIGINS = [
   "https://safe-route-nav.vercel.app",
   /\.vercel\.app$/,
 ];
-app.use(cors({
-  origin: '*',
-  methods: ['GET','POST','PUT','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
-
-app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(cors()); // Allow ALL
 app.use(express.json({ limit: "10mb" }));
-
-// CYBERSECURITY: Rate limiting per 15 min window
-app.use('/api/', rateLimit({ windowMs: 15*60*1000, max: 300, message: { error: 'Too many requests' } }));
 
 // ── Constants ─────────────────────────────────────────────────────
 const JWT_SECRET = process.env.JWT_SECRET || 'saferoutes_hackathon_2025';
