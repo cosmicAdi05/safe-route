@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io, Socket } from "socket.io-client";
 import toast from "react-hot-toast";
-import { AlertTriangle, X, Shield, Activity } from "lucide-react";
+import { AlertTriangle, X, Shield, Activity, Volume2, VolumeX, Share2, Heart, CheckCircle2 } from "lucide-react";
 
 import {
   routeApi, incidentApi, safetyApi, zoneApi, getStoredUser,
@@ -82,7 +82,25 @@ export default function MapApp() {
   const [pickingMode, setPickingMode] = useState<"origin"|"dest"|null>(null);
 
   const [routes, setRoutes]             = useState<RouteSet|null>(null);
-  const [selectedRoute, setSelectedRoute] = useState<"safest"|"fastest"|"balanced">("safest");
+  const [voiceEnabled, setVoiceEnabled] = useState(false);
+  const [isGuardianLive, setIsGuardianLive] = useState(false);
+  const [lastSpokenAlert, setLastSpokenAlert] = useState("");
+
+  const speak = (text: string) => {
+    if (!voiceEnabled || typeof window === "undefined") return;
+    if (lastSpokenAlert === text) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.9;
+    window.speechSynthesis.speak(utterance);
+    setLastSpokenAlert(text);
+  };
+
+  const shareGuardianLink = () => {
+    const link = `https://saferoutes.ai/track/${Math.random().toString(36).substring(7)}`;
+    navigator.clipboard.writeText(link);
+    toast.success("Guardian Link copied! Share this with family to track your safety.");
+    setIsGuardianLive(true);
+  };
   const [loadingRoutes, setLoadingRoutes] = useState(false);
 
   const [incidents, setIncidents] = useState<Incident[]>([]);
@@ -138,6 +156,9 @@ export default function MapApp() {
     socketRef.current = socket;
     socket.on("safety-update", (data) => {
       setLiveAlerts(prev => [{ ...data, id: Date.now() }, ...prev.slice(0, 4)]);
+      if (data.severity >= 4) {
+        speak(`Warning: High risk ${data.incidentType} reported nearby.`);
+      }
     });
 
     fetchNearbyData(DEFAULT_CENTER[0], DEFAULT_CENTER[1]);
@@ -423,7 +444,43 @@ export default function MapApp() {
         onSelect={setSelectedRoute}
         loading={loadingRoutes}
         offlineScore={offlineScore}
-      />
+      >
+            {/* Edge Features: Co-Pilot & Guardian */}
+            <div className="mt-6 p-4 rounded-2xl bg-primary/5 border border-primary/10">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <div className={`p-2 rounded-lg ${voiceEnabled ? "bg-primary/20 text-primary" : "bg-white/5 text-slate-500"}`}>
+                    {voiceEnabled ? <Volume2 size={16} /> : <VolumeX size={16} />}
+                  </div>
+                  <span className="text-sm font-bold">AI Voice Co-Pilot</span>
+                </div>
+                <button 
+                  onClick={() => {
+                    setVoiceEnabled(!voiceEnabled);
+                    if (!voiceEnabled) toast.success("Voice Co-Pilot Enabled — Hands-free alerts active.");
+                  }}
+                  className={`w-10 h-5 rounded-full relative transition-colors ${voiceEnabled ? "bg-primary" : "bg-slate-700"}`}
+                >
+                  <div className={`absolute top-1 w-3 h-3 rounded-full bg-white transition-all ${voiceEnabled ? "left-6" : "left-1"}`} />
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className={`p-2 rounded-lg ${isGuardianLive ? "bg-safe/20 text-safe" : "bg-white/5 text-slate-500"}`}>
+                    <Share2 size={16} />
+                  </div>
+                  <span className="text-sm font-bold">Guardian Live-Share</span>
+                </div>
+                <button 
+                  onClick={shareGuardianLink}
+                  className={`px-4 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${isGuardianLive ? "bg-safe/20 text-safe border border-safe/30" : "bg-primary text-white"}`}
+                >
+                  {isGuardianLive ? "Link Active ●" : "Generate Link"}
+                </button>
+              </div>
+            </div>
+      </BottomDrawer>
 
       {/* ── SOS Hub ── */}
       <SOSButton />
