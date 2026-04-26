@@ -1,6 +1,6 @@
 // lib/api.ts — centralised API client (v3.0 — fully connected)
-const API = process.env.NEXT_PUBLIC_API_URL || "https://saferoutes-backend.onrender.com";
-const ML  = process.env.NEXT_PUBLIC_ML_URL  || "https://saferoutes-ml.onrender.com";
+const API = "https://saferoutes-backend.onrender.com";
+const ML  = "https://saferoutes-ml.onrender.com";
 
 // ── Auth token helpers ─────────────────────────────────────────────────────
 export function getToken(): string | null {
