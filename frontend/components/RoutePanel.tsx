@@ -20,6 +20,7 @@ interface Props {
   pickingMode: any; setPickingMode: (v:any) => void;
   routes: RouteSet|null; selectedRoute: "safest"|"fastest"|"balanced";
   setSelectedRoute: (v:any) => void; loadingRoutes: boolean; onCompute: () => void;
+  onStepClick?: (lat: number, lng: number) => void;
 }
 
 function LocationInput({ label, value, onSet, onClear, pickingMode, pickingKey, setPickingMode, accentColor }: any) {
@@ -222,7 +223,16 @@ export default function RoutePanel({ origin, dest, setOrigin, setDest, pickingMo
                   </div>
                   <div style={{ display:"flex", flexDirection:"column", gap:8, maxHeight:"200px", overflowY:"auto", paddingRight:6 }} className="scrollbar-none">
                     {activeRoute.instructions.map((step, i) => (
-                      <div key={i} style={{ display:"flex", gap:10, paddingBottom:8, borderBottom: i === activeRoute.instructions.length-1 ? "none" : "1px solid rgba(255,255,255,0.03)" }}>
+                      <div 
+                        key={i} 
+                        onClick={() => {
+                          // Approximate lat/lng from waypoints (since OSRM steps don't always have them directly in this version)
+                          const wptIndex = Math.floor((i / activeRoute.instructions.length) * activeRoute.waypoints.length);
+                          const wpt = activeRoute.waypoints[wptIndex];
+                          if (wpt && onStepClick) onStepClick(wpt.lat, wpt.lng);
+                        }}
+                        style={{ display:"flex", gap:10, paddingBottom:8, borderBottom: i === activeRoute.instructions.length-1 ? "none" : "1px solid rgba(255,255,255,0.03)", cursor: "pointer" }}
+                      >
                         <div style={{ width:18, height:18, borderRadius:5, background:"rgba(99,102,241,0.15)", color:"#818cf8", fontSize:9, fontWeight:800, display:"flex", alignItems:"center", justifyCenter:"center", flexShrink:0, marginTop:2 }}>
                           {i + 1}
                         </div>

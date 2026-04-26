@@ -5,7 +5,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { io, Socket } from "socket.io-client";
 import toast from "react-hot-toast";
-import { AlertTriangle, X, Shield, Activity, Volume2, VolumeX, Share2, Heart, CheckCircle2 } from "lucide-react";
+import { AlertTriangle, X, Shield, Activity, Volume2, VolumeX, Share2, Heart, CheckCircle2, Target, Navigation2 } from "lucide-react";
 
 import {
   routeApi, incidentApi, safetyApi, zoneApi, getStoredUser,
@@ -103,7 +103,21 @@ export default function MapApp() {
   };
   const [loadingRoutes, setLoadingRoutes] = useState(false);
 
-  const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [userPos, setUserPos] = useState<[number, number] | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
+
+  const locateUser = useCallback(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const { latitude, longitude } = pos.coords;
+      setUserPos([latitude, longitude]);
+      mapRef.current?.flyTo([latitude, longitude], 15);
+    });
+  }, []);
+
+  const focusStep = (lat: number, lng: number) => {
+    mapRef.current?.flyTo([lat, lng], 18, { duration: 1.5 });
+  };
   const [heatPoints, setHeatPoints] = useState<HeatPoint[]>([]);
   const [zones, setZones] = useState<SafetyZone[]>([]);
   const [liveAlerts, setLiveAlerts] = useState<any[]>([]);
@@ -264,16 +278,35 @@ export default function MapApp() {
   return (
     <div className="w-screen h-screen relative overflow-hidden mesh-bg">
 
+      {/* ── Floating Map Controls ── */}
+      <div className="absolute top-24 right-4 z-10 flex flex-col gap-3">
+        <button 
+          onClick={locateUser}
+          className="p-3 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-white/10 text-white shadow-xl hover:bg-primary/20 transition-all group"
+          title="Locate Me"
+        >
+          <Target size={20} className="group-hover:scale-110 transition-transform" />
+        </button>
+      </div>
+
       {/* ── Map Canvas ── */}
       <div className="absolute inset-0 z-0">
-        <MapContainer center={DEFAULT_CENTER} zoom={5} zoomControl={false} style={{ width: "100%", height: "100%" }}>
+        <MapContainer 
+          center={DEFAULT_CENTER} 
+          zoom={5} 
+          zoomControl={false} 
+          style={{ width: "100%", height: "100%" }}
+          ref={mapRef}
+        >
           <TileLayer
             url="https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png"
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             maxZoom={20}
           />
           <MapClickHandler onMapClick={handleMapClick} />
-          <ZoomControl position="bottomright" />
+          {userPos && (
+            <Marker position={userPos} icon={L.divIcon({ className: "user-pos-icon", html: `<div class="w-4 h-4 bg-blue-500 border-2 border-white rounded-full shadow-lg shadow-blue-500/50 animate-pulse"></div>` })} />
+          )}
 
           {/* Danger Zones */}
           {zones.filter(z => z.type === "danger").map(z => (
