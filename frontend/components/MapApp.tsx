@@ -133,7 +133,7 @@ export default function MapApp() {
     const saved = getStoredUser();
     if (saved) setUser(saved);
 
-    const socket = io(process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000", { transports: ["websocket"] });
+    const socket = io("https://saferoutes-backend.onrender.com", { transports: ["websocket"] });
     socketRef.current = socket;
     socket.on("safety-update", (data) => {
       setLiveAlerts(prev => [{ ...data, id: Date.now() }, ...prev.slice(0, 4)]);

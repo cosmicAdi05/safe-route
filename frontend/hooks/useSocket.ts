@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API_URL = "https://saferoutes-backend.onrender.com";
 
 export interface LiveAlert {
   id: number;

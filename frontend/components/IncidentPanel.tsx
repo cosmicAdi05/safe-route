@@ -3,7 +3,7 @@ import { useState, useEffect } from "react";
 import { AlertTriangle, Plus, MapPin, RefreshCw, ChevronUp, ChevronDown, ShieldAlert, CheckCircle, XCircle, Lock } from "lucide-react";
 import toast from "react-hot-toast";
 
-const API = process.env.NEXT_PUBLIC_API_URL || "http://localhost:5000";
+const API = "https://saferoutes-backend.onrender.com";
 
 const INCIDENT_TYPES = [
   { value:"theft",               label:"Theft/Robbery",  emoji:"🔓" },
